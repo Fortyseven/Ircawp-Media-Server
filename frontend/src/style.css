@@ -227,6 +227,16 @@ input[type="number"]:disabled {
   gap: 0.9rem;
 }
 
+.model-pick {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.model-pick select {
+  flex: 1;
+}
+
 .row .field {
   flex: 1 1 6.5rem;
 }

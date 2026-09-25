@@ -27,6 +27,27 @@ class MediaBackend:
         """
         return ""
 
+    def dispose(self) -> None:
+        """Release heavy model resources held by this backend.
+
+        Called by the server's /backends/unload endpoint. Drops references
+        to loaded pipelines/models so they can be garbage-collected, then
+        frees the CUDA cache if a GPU is in use.
+        """
+        import gc
+
+        for attr in ("pipe", "pipe2", "model", "vae", "text_encoder", "transformer"):
+            if getattr(self, attr, None) is not None:
+                setattr(self, attr, None)
+        gc.collect()
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except ImportError:
+            pass
+
     @staticmethod
     def raise_if_cancelled(config: dict) -> None:
         """Abort cooperative backend work when the request has been cancelled."""
@@ -47,7 +68,6 @@ class MediaBackend:
             return callback_kwargs
 
         return callback
-
 
     def _save_image_with_metadata(
         self,

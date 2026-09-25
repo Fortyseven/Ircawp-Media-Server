@@ -15,6 +15,7 @@
         dimensionsForAspect,
         getAspectRatioGroups,
     } from "../lib/size-options.js";
+    import { unloadBackends } from "../lib/api.js";
     import { loadDraft, saveDraft } from "../lib/draft.js";
 
     let {
@@ -66,6 +67,8 @@
         initialDraftSettings.seed ?? initialSettings.seed ?? undefined,
     );
     let hadImages = initialImages.length > 0;
+    let unloading = $state(false);
+    let unloadNote = $state("");
     let n = $state(initialDraftSettings.n ?? initialSettings.n ?? 1);
     let steps = $state(
         initialDraftSettings.steps ?? initialSettings.steps ?? undefined,
@@ -78,7 +81,6 @@
     );
 
     const aspectRatioGroups = $derived(getAspectRatioGroups(images.length > 0));
-    const matchesSource = $derived(aspectRatio === MATCH_SOURCE);
     const supportsQwenControls = $derived(
         (model || defaultBackend) === "qwenimage21",
     );
@@ -100,7 +102,7 @@
 
         if (hasImages && !hadImages) {
             aspectRatio = MATCH_SOURCE;
-        } else if (!hasImages && matchesSource) {
+        } else if (!hasImages && aspectRatio === MATCH_SOURCE) {
             aspectRatio = DEFAULT_ASPECT_RATIO;
         }
 
@@ -132,13 +134,39 @@
         }
     }
 
+    async function handleUnload() {
+        if (unloading) return;
+        unloading = true;
+        unloadNote = "unloading…";
+        try {
+            const res = await unloadBackends();
+            unloadNote =
+                res.unloaded?.length > 0
+                    ? `unloaded ${res.unloaded.join(", ")}`
+                    : "nothing loaded";
+        } catch (e) {
+            unloadNote = `unload failed: ${e.message}`;
+        } finally {
+            unloading = false;
+        }
+    }
+
+    // Transient feedback: clear the note a few seconds after it appears.
+    $effect(() => {
+        if (!unloadNote) return;
+        const t = setTimeout(() => (unloadNote = ""), 5000);
+        return () => clearTimeout(t);
+    });
+
     function submit() {
         if (!canSubmit) return;
         ongenerate({
             prompt: finalPrompt,
             model: model || undefined,
+            // Match source: size stays undefined; output_size tells the
+            // backend to scale the source's longest side, keeping its shape.
             size: dimensionsForAspect(aspectRatio, outputSize),
-            outputSize: matchesSource ? undefined : outputSize,
+            outputSize,
             aspectRatio,
             trueCfgScale: supportsQwenControls ? trueCfgScale : undefined,
             seed: supportsQwenControls ? seed : undefined,
@@ -218,8 +246,9 @@
             <p
                 class="final-prompt mono"
                 title={finalPrompt}
-                >→ {finalPrompt}</p
             >
+                → {finalPrompt}
+            </p>
         {/if}
     </label>
 
@@ -243,18 +272,32 @@
     </label>
 
     <div class="row">
-        <label class="field grow">
+        <div class="field grow model-field">
             <span class="label mono">model</span>
-            <select
-                bind:value={model}
-                disabled={generating}
-            >
-                <option value="">default ({defaultBackend || "…"})</option>
-                {#each backends as b}
-                    <option value={b}>{b}</option>
-                {/each}
-            </select>
-        </label>
+            <div class="model-pick">
+                <select
+                    bind:value={model}
+                    disabled={generating}
+                >
+                    <option value="">default ({defaultBackend || "…"})</option>
+                    {#each backends as b}
+                        <option value={b}>{b}</option>
+                    {/each}
+                </select>
+                <button
+                    class="config-button"
+                    type="button"
+                    onclick={handleUnload}
+                    disabled={generating || unloading}
+                    title="Unload all models from the backend server"
+                >
+                    {unloading ? "unloading…" : "unload"}
+                </button>
+            </div>
+            {#if unloadNote}
+                <span class="hint mono">{unloadNote}</span>
+            {/if}
+        </div>
 
         <label class="field">
             <span class="label mono">images</span>
@@ -291,7 +334,7 @@
             <span class="label mono">output</span>
             <select
                 bind:value={outputSize}
-                disabled={generating || matchesSource}
+                disabled={generating}
             >
                 {#each OUTPUT_SIZES as edge}
                     <option value={edge}>{edge}px</option>

@@ -100,7 +100,6 @@ def _unregister_progress(request_id: str | None) -> None:
         _active_progress.pop(request_id, None)
 
 
-
 def get_backend(backend_id: str):
     """Lazy-load a backend by ID, caching the instance so the model stays in memory."""
     if backend_id in _backend_cache:
@@ -264,6 +263,32 @@ async def backends():
         "default": DEFAULT_BACKEND,
         "backends": sorted((CONFIG.get("backends") or {}).keys()),
     }
+
+
+@app.post("/backends/unload")
+async def unload_backends():
+    """Unload all loaded backends, freeing the model(s) from memory.
+
+    The next generation will lazily re-load the backend. Rejects with 409
+    if a generation is still in flight for the loaded backend(s).
+    """
+    if not _backend_cache:
+        return {"unloaded": [], "message": "no backends loaded"}
+    if _active_progress:
+        raise HTTPException(
+            status_code=409,
+            detail="a generation is in flight — cancel it first",
+        )
+
+    unloaded = []
+    for backend_id in list(_backend_cache):
+        backend = _backend_cache.pop(backend_id)
+        try:
+            backend.dispose()
+        except Exception as e:
+            console.log(f"[yellow]Backend '{backend_id}' dispose warning: {e}")
+        unloaded.append(backend_id)
+    return {"unloaded": unloaded}
 
 
 @app.post("/images/cancellations/{request_id}", status_code=202)

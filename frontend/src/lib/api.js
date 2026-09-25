@@ -83,3 +83,7 @@ export async function getImageProgress(requestId) {
 export async function getBackends() {
     return request("/backends");
 }
+
+export async function unloadBackends() {
+    return postJSON("/backends/unload", {});
+}
