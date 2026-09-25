@@ -4,6 +4,7 @@
         exportTemplatesCsv,
         importTemplatesCsv,
         loadTemplates,
+        resetTemplates,
         saveTemplates,
         sortedTemplates,
     } from "../lib/prompt-templates.js";
@@ -87,6 +88,18 @@
         if (!confirm(`Delete template "${template.name}"?`)) return;
         if (!isNew && editingName === template.name) resetEditor();
         persist(templates.filter((t) => t.name !== template.name));
+    }
+
+    function handleReset() {
+        if (
+            !confirm(
+                "Reset deletes ALL current templates and restores the built-in defaults. Continue?",
+            )
+        ) {
+            return;
+        }
+        resetEditor();
+        persist(resetTemplates());
     }
 
     function handleExport() {
@@ -233,6 +246,11 @@
                 type="button"
                 class="ghost"
                 onclick={() => importInput?.click()}>import</button
+            >
+            <button
+                type="button"
+                class="ghost danger"
+                onclick={handleReset}>reset</button
             >
             <input
                 bind:this={importInput}

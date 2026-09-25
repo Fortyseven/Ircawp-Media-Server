@@ -89,6 +89,17 @@ export function saveTemplates(list, storage) {
 }
 
 /**
+ * Reset the list to the built-in defaults, discarding everything the user
+ * has added, edited, or imported. Persists the defaults and returns a fresh
+ * copy of them.
+ */
+export function resetTemplates(storage) {
+    const defaults = DEFAULT_TEMPLATES.map((t) => ({ ...t }));
+    saveTemplates(defaults, storage);
+    return defaults;
+}
+
+/**
  * Build the prompt actually sent to the server:
  * - template has {prompt} → box text substituted at the first occurrence
  * - no placeholder → the template body alone (box text ignored)

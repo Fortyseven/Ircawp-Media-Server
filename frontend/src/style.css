@@ -671,6 +671,17 @@ input[type="number"]:disabled {
   flex: 1;
 }
 
+/* Destructive ghost variant, pushed to the right of the io row. */
+.ghost.danger {
+  color: var(--danger);
+  margin-left: auto;
+}
+
+.ghost.danger:hover {
+  border-color: rgba(224, 90, 78, 0.4);
+  background: rgba(224, 90, 78, 0.08);
+}
+
 .hidden-file {
   display: none;
 }
