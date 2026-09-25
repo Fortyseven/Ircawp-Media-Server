@@ -6,3 +6,4 @@ scripts/convert_qwenimage21_to_gguf.py
 scripts/download_qwenimage21_base.py
 frontend/node_modules
 .venv
+plans

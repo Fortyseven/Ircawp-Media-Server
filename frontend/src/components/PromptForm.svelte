@@ -1,6 +1,12 @@
 <script>
     import { untrack } from "svelte";
     import ImageUpload from "./ImageUpload.svelte";
+    import PromptTemplates from "./PromptTemplates.svelte";
+    import {
+        applyTemplate,
+        loadTemplates,
+        sortedTemplates,
+    } from "../lib/prompt-templates.js";
     import {
         DEFAULT_ASPECT_RATIO,
         DEFAULT_OUTPUT_SIZE,
@@ -31,6 +37,13 @@
         : [];
 
     let prompt = $state(initialDraft.prompt ?? "");
+    let templates = $state(loadTemplates());
+    let templateName = $state(initialDraftSettings.templateName ?? "");
+    let showTemplatesDialog = $state(false);
+    // Drop a stale selection (template deleted since the last draft save).
+    if (templateName && !templates.some((t) => t.name === templateName)) {
+        templateName = "";
+    }
     let model = $state(
         initialDraftSettings.model ?? initialSettings.model ?? "",
     );
@@ -70,7 +83,17 @@
         (model || defaultBackend) === "qwenimage21",
     );
 
-    const canSubmit = $derived(!generating && prompt.trim());
+    // Dropdown display order: name-sorted, independent of storage order.
+    const sorted = $derived(sortedTemplates(templates));
+    const activeTemplate = $derived(
+        templates.find((t) => t.name === templateName) ?? null,
+    );
+    // The prompt actually sent: template body with the box text spliced into
+    // {prompt} when present, the body alone otherwise, raw box text for none.
+    const finalPrompt = $derived(
+        activeTemplate ? applyTemplate(activeTemplate, prompt) : prompt.trim(),
+    );
+    const canSubmit = $derived(!generating && finalPrompt.trim() !== "");
 
     $effect(() => {
         const hasImages = images.length > 0;
@@ -97,14 +120,22 @@
                 n,
                 steps,
                 rewritePrompt,
+                templateName,
             },
         });
     });
 
+    function handleTemplatesChange(list) {
+        templates = list;
+        if (templateName && !list.some((t) => t.name === templateName)) {
+            templateName = "";
+        }
+    }
+
     function submit() {
         if (!canSubmit) return;
         ongenerate({
-            prompt: prompt.trim(),
+            prompt: finalPrompt,
             model: model || undefined,
             size: dimensionsForAspect(aspectRatio, outputSize),
             outputSize: matchesSource ? undefined : outputSize,
@@ -152,6 +183,29 @@
         submit();
     }}
 >
+    <div class="template-pick">
+        <label class="field">
+            <span class="label mono">template</span>
+            <select
+                bind:value={templateName}
+                disabled={generating}
+            >
+                <option value="">none</option>
+                {#each sorted as t (t.name)}
+                    <option value={t.name}>{t.name}</option>
+                {/each}
+            </select>
+        </label>
+        <button
+            class="config-button"
+            type="button"
+            onclick={() => (showTemplatesDialog = true)}
+            disabled={generating}
+        >
+            manage
+        </button>
+    </div>
+
     <label class="field">
         <span class="label mono">prompt</span>
         <textarea
@@ -160,6 +214,13 @@
             placeholder="a lighthouse in a storm, oil painting…"
             disabled={generating}
         ></textarea>
+        {#if activeTemplate}
+            <p
+                class="final-prompt mono"
+                title={finalPrompt}
+                >→ {finalPrompt}</p
+            >
+        {/if}
     </label>
 
     <button
@@ -283,3 +344,10 @@
         </p>
     {/if}
 </form>
+
+{#if showTemplatesDialog}
+    <PromptTemplates
+        onchange={handleTemplatesChange}
+        onclose={() => (showTemplatesDialog = false)}
+    />
+{/if}

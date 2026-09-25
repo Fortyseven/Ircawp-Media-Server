@@ -449,6 +449,8 @@ input[type="number"]:disabled {
   z-index: 10;
   display: grid;
   place-items: center;
+  place-items: safe center; /* oversized dialog aligns to top instead of clipping */
+  overflow-y: auto; /* last resort: scroll to reach any part of a tall dialog */
   padding: 1rem;
   background: rgba(0, 0, 0, 0.72);
 }
@@ -510,6 +512,167 @@ input[type="number"]:disabled {
 
 .dialog-actions .cta {
   padding: 0.55rem 1rem;
+}
+
+/* ── prompt templates ──────────────────────────────────────── */
+
+.template-pick {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.template-pick .field {
+  flex: 1;
+  min-width: 0;
+}
+
+.config-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.final-prompt {
+  margin: -0.15rem 0 0;
+  font-size: 0.72rem;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.templates-dialog {
+  /* definite width (vw, not %): a %-wide grid item makes the auto track size to
+     the item's min-content instead, which explodes with long template text */
+  width: min(640px, calc(100vw - 2rem));
+  max-height: min(720px, calc(100vh - 2rem));
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius);
+  padding: 1.1rem;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+}
+
+.template-editor {
+  display: grid;
+  gap: 0.85rem;
+  flex-shrink: 0;
+}
+
+.template-editor input[type="text"],
+.template-editor textarea {
+  width: 100%;
+  font-family: var(--font-display);
+  font-size: 0.92rem;
+  color: var(--text);
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 0.55rem 0.7rem;
+}
+
+.template-editor input[type="text"]:focus,
+.template-editor textarea:focus {
+  outline: none;
+  border-color: var(--amber);
+}
+
+.template-editor textarea {
+  min-height: 74px;
+  resize: vertical;
+}
+
+.template-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.template-editor-actions .cta {
+  padding: 0.55rem 1rem;
+}
+
+.form-error,
+.io-error {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--danger);
+}
+
+.template-list {
+  flex: 1;
+  min-height: 10rem; /* keep a decent viewing area even when the dialog is squeezed */
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.9rem 0;
+  padding-right: 0.25rem;
+}
+
+.template-row {
+  display: flex;
+  align-items: center;
+  min-width: 0; /* allow the row to shrink below its text's min-content */
+  gap: 0.75rem;
+  padding: 0.5rem 0.65rem;
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+
+.template-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.template-row .name {
+  font-size: 0.85rem;
+  color: var(--amber);
+}
+
+.template-row .preview {
+  /* block (not inline): overflow clipping only works on block-level boxes */
+  display: block;
+  font-size: 0.72rem;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.template-row-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.empty-note {
+  margin: 0.4rem 0.2rem;
+  font-size: 0.72rem;
+  color: var(--dim);
+}
+
+.template-io {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  padding-top: 0.8rem;
+}
+
+.template-io .io-error {
+  flex: 1;
+}
+
+.hidden-file {
+  display: none;
 }
 
 /* ── results ────────────────────────────────────────────────── */
