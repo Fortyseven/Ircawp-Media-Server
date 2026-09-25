@@ -1,0 +1,8 @@
+docs/QWENIMAGE21.md
+models
+config.yml
+Justfile
+scripts/convert_qwenimage21_to_gguf.py
+scripts/download_qwenimage21_base.py
+frontend/node_modules
+.venv

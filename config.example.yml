@@ -1,0 +1,29 @@
+# Media server configuration
+server:
+    host: "127.0.0.1"
+    port: 8100
+    # Optional SSL — set paths to serve HTTPS
+    # (certs not present on this host — disabled for local testing)
+    ssl_cert: "~/server.pem"
+    ssl_key: "~/server-key.pem"
+
+# Which backend to use for image generation
+backend: "qwenimage21"
+
+# Backend-specific settings
+backends:
+    qwenimage21:
+        max_output_size: 1024
+        steps: 25
+        gguf: "models/qwen_image_2.1_F16.gguf"
+        text_encoder_4bit: true
+    flux2klein:
+        max_output_size: 1024
+    hyper_sdxl:
+        max_output_size: 1024
+    sd15:
+        max_output_size: 512
+    sdxs:
+        max_output_size: 512
+    zimageturbo:
+        max_output_size: 1280
