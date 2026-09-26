@@ -17,6 +17,7 @@
     } from "../lib/size-options.js";
     import { unloadBackends } from "../lib/api.js";
     import { loadDraft, saveDraft } from "../lib/draft.js";
+    import { promptFromImages } from "../lib/prompt-from-images.js";
 
     let {
         backends = [],
@@ -79,6 +80,9 @@
             initialSettings.rewritePrompt ??
             false,
     );
+    // "prompt from images" button: in-flight state and its error note.
+    let prompting = $state(false);
+    let promptNote = $state("");
 
     const aspectRatioGroups = $derived(getAspectRatioGroups(images.length > 0));
     const supportsQwenControls = $derived(
@@ -157,6 +161,29 @@
         const t = setTimeout(() => (unloadNote = ""), 5000);
         return () => clearTimeout(t);
     });
+
+    // Run inference on the attached images with the swappable system prompt
+    // and replace the prompt box with whatever comes back.
+    async function handlePromptFromImages() {
+        if (prompting || generating || !images.length) return;
+        promptNote = "";
+        prompting = true;
+        try {
+            const generated = await promptFromImages({
+                images,
+                endpoint: settings.promptRewrite?.endpoint,
+                apiKey: settings.promptRewrite?.apiKey,
+                model: settings.promptRewrite?.model,
+            });
+            prompt = generated;
+        } catch (e) {
+            if (e.name !== "AbortError") {
+                promptNote = `prompt from images failed: ${e.message}`;
+            }
+        } finally {
+            prompting = false;
+        }
+    }
 
     function submit() {
         if (!canSubmit) return;
@@ -240,7 +267,7 @@
             bind:value={prompt}
             rows="4"
             placeholder="a lighthouse in a storm, oil painting…"
-            disabled={generating}
+            disabled={generating || prompting}
         ></textarea>
         {#if activeTemplate}
             <p
@@ -262,14 +289,34 @@
 
     <ImageUpload bind:images />
 
-    <label class="rewrite-toggle">
-        <input
-            type="checkbox"
-            bind:checked={rewritePrompt}
-            disabled={generating}
-        />
-        <span>rewrite prompt before generating</span>
-    </label>
+    <div class="rewrite-row">
+        <label class="rewrite-toggle">
+            <input
+                type="checkbox"
+                bind:checked={rewritePrompt}
+                disabled={generating}
+            />
+            <span>rewrite prompt before generating</span>
+        </label>
+        {#if images.length > 0}
+            <button
+                class="config-button"
+                type="button"
+                title="Run inference on the attached images and replace the prompt"
+                disabled={generating || prompting}
+                onclick={handlePromptFromImages}
+            >
+                {prompting ? "working…" : "prompt from images"}
+            </button>
+        {/if}
+    </div>
+
+    {#if promptNote}
+        <span
+            class="hint mono error-note"
+            role="alert">{promptNote}</span
+        >
+    {/if}
 
     <div class="row">
         <div class="field grow model-field">
