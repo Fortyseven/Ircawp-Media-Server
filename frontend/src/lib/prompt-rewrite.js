@@ -191,13 +191,14 @@ Rules for each field:
 
 Do not include any text outside the JSON object — no greetings, no explanations, no markdown code fences.`;
 
-export async function rewritePrompt({
-    prompt,
+// Shared OpenAI-compatible chat completion call: one system message plus one
+// user message, returns the trimmed completion text.
+export async function chatCompletion({
     endpoint,
     apiKey,
     model,
-    hasImages,
-    images = [],
+    systemPrompt,
+    userContent,
     signal,
 }) {
     if (!endpoint) {
@@ -207,24 +208,9 @@ export async function rewritePrompt({
         throw new Error("Prompt rewrite API key is required.");
     }
 
-    const userContent = images.length
-        ? [
-              { type: "text", text: prompt },
-              ...images.map((url) => ({
-                  type: "image_url",
-                  image_url: { url },
-              })),
-          ]
-        : prompt;
-
     const requestBody = {
         messages: [
-            {
-                role: "system",
-                content: hasImages
-                    ? IMAGE_EDIT_SYSTEM_PROMPT
-                    : IMAGE_GENERATION_SYSTEM_PROMPT,
-            },
+            { role: "system", content: systemPrompt },
             { role: "user", content: userContent },
         ],
     };
@@ -233,6 +219,11 @@ export async function rewritePrompt({
     const completionEndpoint = endpoint.endsWith("/chat/completions")
         ? endpoint
         : `${endpoint.replace(/\/$/, "")}/chat/completions`;
+
+    const httpsAgent = new https.Agent({
+        rejectUnauthorized: false,
+    });
+
     const response = await fetch(completionEndpoint, {
         method: "POST",
         headers: {
@@ -241,6 +232,7 @@ export async function rewritePrompt({
         },
         body: JSON.stringify(requestBody),
         signal,
+        agent: httpsAgent,
     });
 
     const body = await response.json();
@@ -259,4 +251,35 @@ export async function rewritePrompt({
     }
 
     return completion;
+}
+
+export async function rewritePrompt({
+    prompt,
+    endpoint,
+    apiKey,
+    model,
+    hasImages,
+    images = [],
+    signal,
+}) {
+    const userContent = images.length
+        ? [
+              { type: "text", text: prompt },
+              ...images.map((url) => ({
+                  type: "image_url",
+                  image_url: { url },
+              })),
+          ]
+        : prompt;
+
+    return chatCompletion({
+        endpoint,
+        apiKey,
+        model,
+        systemPrompt: hasImages
+            ? IMAGE_EDIT_SYSTEM_PROMPT
+            : IMAGE_GENERATION_SYSTEM_PROMPT,
+        userContent,
+        signal,
+    });
 }
