@@ -15,20 +15,12 @@
         dimensionsForAspect,
         getAspectRatioGroups,
     } from "../lib/size-options.js";
-    import { unloadBackends } from "../lib/api.js";
+    import { promptFromImages, unloadBackends } from "../lib/api.js";
     import { loadDraft, saveDraft } from "../lib/draft.js";
-    import { promptFromImages } from "../lib/prompt-from-images.js";
 
-    let {
-        backends = [],
-        defaultBackend = "",
-        settings = {},
-        generating = false,
-        ongenerate,
-        onabort,
-    } = $props();
+    let { backends = [], defaultBackend = "", generating = false, ongenerate, onabort } =
+        $props();
 
-    const initialSettings = untrack(() => settings);
     const initialDraft = untrack(() => loadDraft());
     const initialDraftSettings =
         initialDraft.settings && typeof initialDraft.settings === "object"
@@ -46,40 +38,22 @@
     if (templateName && !templates.some((t) => t.name === templateName)) {
         templateName = "";
     }
-    let model = $state(
-        initialDraftSettings.model ?? initialSettings.model ?? "",
-    );
+    let model = $state(initialDraftSettings.model ?? "");
     let aspectRatio = $state(
-        initialDraftSettings.aspectRatio ??
-            initialSettings.aspectRatio ??
-            DEFAULT_ASPECT_RATIO,
+        initialDraftSettings.aspectRatio ?? DEFAULT_ASPECT_RATIO,
     );
     let outputSize = $state(
-        initialDraftSettings.outputSize ??
-            initialSettings.outputSize ??
-            DEFAULT_OUTPUT_SIZE,
+        initialDraftSettings.outputSize ?? DEFAULT_OUTPUT_SIZE,
     );
-    let trueCfgScale = $state(
-        initialDraftSettings.trueCfgScale ??
-            initialSettings.trueCfgScale ??
-            1.0,
-    );
-    let seed = $state(
-        initialDraftSettings.seed ?? initialSettings.seed ?? undefined,
-    );
+    let trueCfgScale = $state(initialDraftSettings.trueCfgScale ?? 1.0);
+    let seed = $state(initialDraftSettings.seed ?? undefined);
     let hadImages = initialImages.length > 0;
     let unloading = $state(false);
     let unloadNote = $state("");
-    let n = $state(initialDraftSettings.n ?? initialSettings.n ?? 1);
-    let steps = $state(
-        initialDraftSettings.steps ?? initialSettings.steps ?? undefined,
-    );
+    let n = $state(initialDraftSettings.n ?? 1);
+    let steps = $state(initialDraftSettings.steps ?? undefined);
     let images = $state(initialImages);
-    let rewritePrompt = $state(
-        initialDraftSettings.rewritePrompt ??
-            initialSettings.rewritePrompt ??
-            false,
-    );
+    let rewritePrompt = $state(initialDraftSettings.rewritePrompt ?? false);
     // "prompt from images" button: in-flight state and its error note.
     let prompting = $state(false);
     let promptNote = $state("");
@@ -162,19 +136,14 @@
         return () => clearTimeout(t);
     });
 
-    // Run inference on the attached images with the swappable system prompt
-    // and replace the prompt box with whatever comes back.
+    // Run inference on the attached images (server-side LLM proxy) and
+    // replace the prompt box with whatever comes back.
     async function handlePromptFromImages() {
         if (prompting || generating || !images.length) return;
         promptNote = "";
         prompting = true;
         try {
-            const generated = await promptFromImages({
-                images,
-                endpoint: settings.promptRewrite?.endpoint,
-                apiKey: settings.promptRewrite?.apiKey,
-                model: settings.promptRewrite?.model,
-            });
+            const generated = await promptFromImages({ images });
             prompt = generated;
         } catch (e) {
             if (e.name !== "AbortError") {
@@ -401,7 +370,7 @@
         </label>
 
         {#if supportsQwenControls}
-            <label class="field">
+            <label class="field small">
                 <span class="label mono">true cfg</span>
                 <input
                     type="number"

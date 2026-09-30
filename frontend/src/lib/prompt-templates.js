@@ -8,7 +8,7 @@ export const DEFAULT_TEMPLATES = [
     {
         name: "comic book",
         body:
-            "Transform this photo into a comic book illustration: bold ink outlines, cel shading, halftone textures. " +
+            "Transform this photo into a comic book illustration: bold ink outlines, cel shading, halftone textures.\n" +
             PROMPT_PLACEHOLDER,
     },
     {

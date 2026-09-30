@@ -3,12 +3,12 @@
     import PromptForm from "./components/PromptForm.svelte";
     import ResultGrid from "./components/ResultGrid.svelte";
     import History from "./components/History.svelte";
-    import PromptRewriteSettings from "./components/PromptRewriteSettings.svelte";
     import {
         cancelImage,
         createImage,
         getBackends,
         getImageProgress,
+        rewritePrompt,
     } from "./lib/api.js";
     import {
         getGenerations,
@@ -16,22 +16,8 @@
         deleteGeneration,
         clearHistory,
     } from "./lib/db.js";
-    import { rewritePrompt } from "./lib/prompt-rewrite.js";
-    import { loadSettings, saveSettings } from "./lib/settings.js";
-
     let backends = $state([]);
     let defaultBackend = $state("");
-    const savedSettings = loadSettings();
-    let settings = $state({
-        ...savedSettings,
-        rewritePrompt: savedSettings.rewritePrompt ?? false,
-        promptRewrite: savedSettings.promptRewrite ?? {
-            endpoint: "",
-            apiKey: "",
-            model: "",
-        },
-    });
-    let showPromptRewriteSettings = $state(false);
     let generating = $state(false);
     let isRevising = $state(false);
     let error = $state("");
@@ -93,9 +79,6 @@
                 try {
                     rewrittenPrompt = await rewritePrompt({
                         prompt: params.prompt,
-                        endpoint: settings.promptRewrite.endpoint,
-                        apiKey: settings.promptRewrite.apiKey,
-                        model: settings.promptRewrite.model,
                         hasImages: params.images.length > 0,
                         images: params.images,
                         signal: requestController.signal,
@@ -135,20 +118,6 @@
             };
             await addGeneration(record);
             results = record;
-            const nextSettings = {
-                model: params.model,
-                size: params.size,
-                outputSize: params.outputSize,
-                aspectRatio: params.aspectRatio,
-                trueCfgScale: params.trueCfgScale,
-                seed: params.seed,
-                n: params.n,
-                steps: params.steps,
-                rewritePrompt: params.rewritePrompt,
-                promptRewrite: settings.promptRewrite,
-            };
-            settings = { ...settings, ...nextSettings };
-            saveSettings(nextSettings);
             await refreshHistory();
         } catch (e) {
             if (e.name !== "AbortError") {
@@ -192,19 +161,6 @@
         await clearHistory();
         refreshHistory();
     }
-
-    function handlePromptRewriteSettings(config) {
-        const promptRewrite = {
-            ...settings.promptRewrite,
-            ...config.promptRewrite,
-        };
-        settings = {
-            ...settings,
-            promptRewrite,
-        };
-        saveSettings({ promptRewrite });
-        showPromptRewriteSettings = false;
-    }
 </script>
 
 <div class="app">
@@ -228,14 +184,6 @@
                 ? `${backends.length} backends · default ${defaultBackend}`
                 : "connecting…"}
         </div>
-        <button
-            class="config-button"
-            type="button"
-            aria-label="Configure prompt rewriting"
-            onclick={() => (showPromptRewriteSettings = true)}
-        >
-            settings
-        </button>
     </header>
 
     <main
@@ -248,7 +196,6 @@
                     bind:this={promptFormRef}
                     {backends}
                     {defaultBackend}
-                    {settings}
                     {generating}
                     ongenerate={handleGenerate}
                     onabort={handleAbort}
@@ -313,11 +260,3 @@
         />
     </main>
 </div>
-
-{#if showPromptRewriteSettings}
-    <PromptRewriteSettings
-        config={settings.promptRewrite}
-        onsave={handlePromptRewriteSettings}
-        onclose={() => (showPromptRewriteSettings = false)}
-    />
-{/if}

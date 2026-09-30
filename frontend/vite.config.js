@@ -11,6 +11,7 @@ export default defineConfig({
             "/images": "http://localhost:8100",
             "/health": "http://localhost:8100",
             "/backends": "http://localhost:8100",
+            "/prompt": "http://localhost:8100",
         },
     },
     build: {

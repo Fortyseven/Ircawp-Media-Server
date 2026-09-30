@@ -80,6 +80,39 @@ export async function getImageProgress(requestId) {
     return request(`/images/progress/${encodeURIComponent(requestId)}`);
 }
 
+// ── LLM proxy (prompt rewriting / describe-images) ─────────────
+// All LLM inference runs server-side (config.yml `llm` section); the
+// browser only sends the raw materials and receives the text back.
+
+async function rewritePromptViaBackend(
+    { prompt = "", images = [], mode = "generate" },
+    signal,
+) {
+    const body = { mode };
+    if (String(prompt ?? "").trim()) body.prompt = String(prompt).trim();
+    if (images?.length) {
+        body.images = images.map((url) => ({ image_url: url }));
+    }
+    const res = await postJSON("/prompt/rewrite", body, signal);
+    return res.prompt;
+}
+
+export async function rewritePrompt({
+    prompt,
+    hasImages,
+    images = [],
+    signal,
+}) {
+    return rewritePromptViaBackend(
+        { prompt, images, mode: hasImages ? "edit" : "generate" },
+        signal,
+    );
+}
+
+export async function promptFromImages({ images, signal }) {
+    return rewritePromptViaBackend({ images, mode: "describe" }, signal);
+}
+
 export async function getBackends() {
     return request("/backends");
 }

@@ -182,6 +182,9 @@ body {
 .field.grow {
   flex: 1;
 }
+.field.small {
+    flex: 0 0 4rem;
+}
 
 .label {
   font-size: 0.68rem;
