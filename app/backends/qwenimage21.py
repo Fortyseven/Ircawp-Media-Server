@@ -12,6 +12,7 @@ This backend receives a final, ready-to-use prompt.
 from .MediaBackend import MediaBackend
 
 import os
+import re
 
 import torch
 from diffusers import QwenImage21Pipeline
@@ -39,6 +40,39 @@ def _register_qwenimage21_single_file():
 
 
 _register_qwenimage21_single_file()
+
+
+def _load_lora_state_dict(path: str) -> dict:
+    """Load a LoRA safetensors file, splitting ComfyUI's fused img_mlp.gate_up.
+
+    ComfyUI's Qwen-Image-2.1 stores the SwiGLU as one fused ``gate_up``
+    [2H, in] linear; the official diffusers model uses separate
+    ``gate_layer`` [H, in] + ``proj`` [H, in]. They are mathematically
+    identical (gate_up = [gate_layer; proj] stacked), so the LoRA's B matrix
+    splits 1:1 in half and its A matrix is shared by both halves. Diffusers
+    keys (lora_A/lora_B) pass through untouched, as does the `diffusion_model.`
+    prefix (the pipeline's loader strips it).
+    """
+    from safetensors.torch import load_file
+
+    sd = load_file(path)
+    out = {}
+    for key, value in sd.items():
+        if key.endswith("img_mlp.gate_up.lora_A.weight"):
+            # A [r, in] feeds both halves — duplicate it
+            out[key.replace("gate_up.", "gate_layer.")] = value
+            out[key.replace("gate_up.", "proj.")] = value
+        elif key.endswith("img_mlp.gate_up.lora_B.weight") or key.endswith(
+            "img_mlp.gate_up.dora_scale"
+        ):
+            # B [2H, r] (and dora_scale [2H, 1]) — first half is gate, second up
+            half = value.shape[0] // 2
+            out[key.replace("gate_up.", "gate_layer.")] = value[:half]
+            out[key.replace("gate_up.", "proj.")] = value[half:]
+        else:
+            out[key] = value
+    return out
+
 
 BASE_MODEL = "Qwen/Qwen-Image-2.1"
 DEFAULT_GGUF = os.path.join(
@@ -106,25 +140,33 @@ class qwenimage21(MediaBackend):
                 }
             )
 
-        vae_latent_scale = (
-            1.02  # float(self.backend_config.get("vae_latent_scale", 1.0))
-        )
-        vae_latent_shift = (
-            0.0  # float(self.backend_config.get("vae_latent_shift", 0.0))
-        )
-
         self.pipe = QwenImage21Pipeline.from_pretrained(base_model, **pipe_kwargs)
 
-        _orig_decode = self.pipe.vae.decode
+        # Optional LoRA adapters (see docs/QWENIMAGE21.md). Loaded once at
+        # startup, switchable per request via config["lora"] /
+        # config["lora_scale"]. The first configured entry is the default and
+        # stays active until a request disables it (lora="none").
+        # NOTE: diffusers drops `dora_scale` tensors when loading (warning in
+        # logs) — DORA checkpoints load as plain LoRAs.
 
-        def _decode_rescaled(latents, *a, **kw):
-            if latents is not None:
-                # this is not a perfect solution, but it can help with minor brightness adjustment
-                latents = latents * 0.88
-                return _orig_decode(latents, *a, **kw)
+        self.loras: dict[str, dict] = {}
 
-            self.pipe.vae.decode = _decode_rescaled
-            print(f"VAE latent multiplier active: {vae_latent_scale}")
+        self.default_lora: str | None = None
+        for entry in self._normalize_lora_config(self.backend_config.get("lora")):
+            self.pipe.load_lora_weights(
+                _load_lora_state_dict(entry["path"]), adapter_name=entry["adapter"]
+            )
+            self.loras[entry["name"]] = entry
+            if self.default_lora is None:
+                self.default_lora = entry["name"]
+            print(
+                f"Loaded LoRA adapter {entry['name']!r} (peft adapter "
+                f"{entry['adapter']!r}) from {entry['path']} (scale "
+                f"{entry['scale']})"
+            )
+        if self.default_lora is not None:
+            self._apply_lora(self.default_lora)
+            print(f"Default LoRA active: {self.default_lora!r}")
 
         self.pipe.enable_model_cpu_offload()
         # VAE decode of a full-res latent in one pass spikes memory after the last
@@ -145,6 +187,73 @@ class qwenimage21(MediaBackend):
             except ValueError:
                 pass
         return float(aspect) if isinstance(aspect, (int, float)) else DEFAULT_ASPECT
+
+    @staticmethod
+    def _normalize_lora_config(raw) -> list[dict]:
+        """Normalize the `lora` backend config into {path, name, adapter, scale}.
+
+        Accepts a single path string, a single dict, or a list of either.
+        `name` (user-facing, used in per-request lora=) defaults to the file
+        stem; `scale` to 1.0. `adapter` is a sanitized name safe for peft's
+        nn.ModuleDict keys (no dots — torch rejects them): "fix-1.0" →
+        "fix_1_0".
+        """
+        if raw is None:
+            return []
+        if isinstance(raw, (str, dict)):
+            raw = [raw]
+        entries = []
+        for item in raw:
+            if isinstance(item, str):
+                item = {"path": item}
+            if "path" not in item:
+                raise ValueError(f"lora config entry missing 'path': {item!r}")
+            name = (
+                item.get("name") or os.path.splitext(os.path.basename(item["path"]))[0]
+            )
+            adapter = re.sub(r"[^0-9A-Za-z_]", "_", name) or "lora"
+            if any(e["adapter"] == adapter for e in entries):
+                raise ValueError(
+                    f"lora adapter name collision: {name!r} sanitizes to "
+                    f"{adapter!r}, already used — give it a distinct 'name'"
+                )
+            entries.append(
+                {
+                    "path": item["path"],
+                    "name": name,
+                    "adapter": adapter,
+                    "scale": float(item.get("scale", 1.0)),
+                }
+            )
+        return entries
+
+    def _apply_lora(self, name, scale=None):
+        """Activate a named LoRA adapter (or disable all when name is falsy).
+
+        Returns (name, scale) of the active adapter, or (None, None) when
+        disabled. Disabling uses zero weights rather than an empty adapter
+        list (peft edge cases around having no active adapter).
+        """
+        if not self.loras:
+            return None, None
+        if name in (None, "", "none", False):
+            self.pipe.set_adapters(
+                [e["adapter"] for e in self.loras.values()],
+                [0.0] * len(self.loras),
+            )
+            return None, None
+        if name not in self.loras:
+            print(
+                f"Unknown lora {name!r} (available: {sorted(self.loras)}) — disabling"
+            )
+            self.pipe.set_adapters(
+                [e["adapter"] for e in self.loras.values()],
+                [0.0] * len(self.loras),
+            )
+            return None, None
+        use_scale = float(scale) if scale is not None else self.loras[name]["scale"]
+        self.pipe.set_adapters([self.loras[name]["adapter"]], [use_scale])
+        return name, use_scale
 
     def execute(
         self,
@@ -201,6 +310,14 @@ class qwenimage21(MediaBackend):
             ).format(final_prompt)
             steps += REMASTER_EXTRA_STEPS
 
+        # LoRA selection: config["lora"] names a configured adapter ("none"
+        # disables); defaults to the first configured LoRA.
+        # config["lora_scale"] overrides the adapter's configured scale.
+        lora_name = config.get("lora")
+        if not isinstance(lora_name, str):
+            lora_name = self.default_lora
+        lora_name, lora_scale = self._apply_lora(lora_name, config.get("lora_scale"))
+
         # Load input media
         media_pil = []
         if has_image:
@@ -249,6 +366,8 @@ class qwenimage21(MediaBackend):
             final_prompt,
             seed=seed,
             model="qwenimage21",
+            lora=lora_name if lora_name is not None else "none",
+            lora_scale=lora_scale,
             inference_steps=steps,
             width=width,
             height=height,

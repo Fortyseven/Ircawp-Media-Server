@@ -4,15 +4,18 @@ ircawp media-server: image generation HTTP service.
 OpenAI-compatible API:
   POST /images/generations  — text-to-image
   POST /images/edits        — image editing
+  POST /prompt/rewrite      — LLM proxy (prompt rewrite / describe images)
 
-Strictly prompt-in → image-out. No LLM calls, no prompt refinement.
-All refinement logic lives in the main ircawp bot.
+LLM inference (prompt rewriting, describe-from-images) is proxied through
+the server to the endpoint configured in config.yml (`llm` section), so the
+browser never holds LLM credentials or talks to the LLM directly.
 """
 
 from __future__ import annotations
 
 import asyncio
 import base64
+import httpx
 import os
 import shutil
 import tempfile
@@ -34,6 +37,7 @@ from app.models import (
     ImageEditRequest,
     ImageGenerationRequest,
     ImagesResponse,
+    PromptRewriteRequest,
     ensure_divisible_by_16,
     parse_size,
 )
@@ -41,17 +45,73 @@ from app.models import (
 console = Console()
 
 
+def _expand_env(value):
+    """Expand `${VAR}` / `${VAR:-default}` references in a config string.
+
+    A `${...}` with no matching close brace, or a missing variable without a
+    default, expands to the empty string. Unrelated text passes through.
+    """
+    if not isinstance(value, str):
+        return value
+
+    out = []
+    i = 0
+    while True:
+        start = value.find("${", i)
+        if start == -1:
+            break
+        out.append(value[i:start])
+        end = value.find("}", start + 2)
+        if end == -1:
+            out.append(value[start:])
+            return "".join(out)
+        name, sep, default = value[start + 2 : end].partition(":-")
+        env_val = os.environ.get(name.strip())
+        out.append(env_val if env_val else (default if sep else ""))
+        i = end + 1
+    out.append(value[i:])
+    return "".join(out)
+
+
+def _expand_env_recursive(node):
+    if isinstance(node, dict):
+        return {k: _expand_env_recursive(v) for k, v in node.items()}
+    if isinstance(node, list):
+        return [_expand_env_recursive(v) for v in node]
+    return _expand_env(node)
+
+
 def load_config(path: str = "config.yml") -> dict:
     config_path = Path(__file__).parent.parent / path
     if not config_path.is_file():
         return {}
     with open(config_path) as f:
-        return yaml.safe_load(f) or {}
+        return _expand_env_recursive(yaml.safe_load(f) or {})
 
 
 CONFIG = load_config()
 SERVER_CONFIG = CONFIG.get("server", {})
 DEFAULT_BACKEND = CONFIG.get("backend", "flux2klein")
+
+def _llm_config(config: dict) -> dict:
+    """LLM proxy settings with environment-variable fallbacks.
+
+    endpoint / api_key fall back to OPENAI_API_BASE and OPENAI_API_KEY when
+    unset (or set to an empty placeholder) in config.yml, so a deployment
+    with only those env vars needs no `llm` section at all.
+    """
+    llm = dict(config.get("llm", {}) or {})
+    if not (llm.get("endpoint") or "").strip():
+        llm["endpoint"] = (os.environ.get("OPENAI_API_BASE") or "").strip()
+    if not (llm.get("api_key") or "").strip():
+        llm["api_key"] = (os.environ.get("OPENAI_API_KEY") or "").strip()
+    return llm
+
+
+# LLM proxy settings — all LLM inference (prompt rewriting, prompt-from-images)
+# is routed through the backend to this OpenAI-compatible chat endpoint, so the
+# browser never talks to the LLM directly (no client-side TLS issues).
+LLM_CONFIG = _llm_config(CONFIG)
 
 # Temporary directory for generated images (cleaned up on shutdown)
 _TEMP_DIR = Path(tempfile.mkdtemp())
@@ -142,6 +202,18 @@ def _image_to_response(image_path: str, final_prompt: str | None = None) -> Imag
     return img
 
 
+def _request_extra(req) -> dict:
+    """Optional per-request params (steps, lora, lora_scale) for backend config."""
+    extra: dict = {}
+    if req.steps is not None:
+        extra["steps"] = req.steps
+    if req.lora is not None:
+        extra["lora"] = req.lora
+    if req.lora_scale is not None:
+        extra["lora_scale"] = req.lora_scale
+    return extra
+
+
 def _build_backend_config(
     *,
     backend_id: str,
@@ -160,6 +232,9 @@ def _build_backend_config(
     request-derived values (size, quality, output_file) override them.
     """
     config = dict(CONFIG.get("backends", {}).get(backend_id, {}))
+    # `lora` in the base config holds adapter *definitions* (loaded by the
+    # backend at startup); per-request `lora` carries an adapter *name*.
+    config.pop("lora", None)
 
     if extra:
         config.update(extra)
@@ -291,6 +366,119 @@ async def unload_backends():
     return {"unloaded": unloaded}
 
 
+# ── LLM proxy ───────────────────────────────────────────────────
+# All LLM inference (prompt rewriting, describe-images) is routed through
+# here so the browser never talks to the LLM endpoint directly. Credentials
+# live in config.yml (`llm` section), never in the frontend.
+
+
+async def _llm_chat_completions(messages: list[dict]) -> str:
+    """Call the configured OpenAI-compatible chat endpoint, return completion text."""
+    endpoint = (LLM_CONFIG.get("endpoint") or "").strip()
+    api_key = (LLM_CONFIG.get("api_key") or "").strip()
+    if not endpoint:
+        raise HTTPException(
+            status_code=503,
+            detail="LLM endpoint is not configured (config.yml: llm.endpoint)",
+        )
+    if not api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="LLM API key is not configured (config.yml: llm.api_key)",
+        )
+
+    completion_url = (
+        endpoint
+        if endpoint.endswith("/chat/completions")
+        else f"{endpoint.rstrip('/')}/chat/completions"
+    )
+    body = {"messages": messages}
+    model = (LLM_CONFIG.get("model") or "").strip()
+    if model:
+        body["model"] = model
+
+    verify = LLM_CONFIG.get("ssl_verify", True)
+    timeout = LLM_CONFIG.get("timeout", 300)
+    try:
+        async with httpx.AsyncClient(
+            verify=verify,
+            timeout=httpx.Timeout(float(timeout)),
+        ) as client:
+            response = await client.post(
+                completion_url,
+                json=body,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {api_key}",
+                },
+            )
+    except httpx.HTTPError as e:
+        console.log(f"[red]LLM request to {completion_url} failed: {e}")
+        raise HTTPException(status_code=502, detail=f"LLM request failed: {e}")
+
+    try:
+        data = response.json()
+    except (httpx.DecodingError, ValueError) as e:
+        raise HTTPException(
+            status_code=502, detail=f"LLM response was not JSON: {e}"
+        )
+    if response.status_code >= 400:
+        detail = (
+            data.get("detail")
+            if isinstance(data, dict)
+            else None
+        ) or str(data)
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=f"LLM endpoint error ({response.status_code}): {detail}",
+        )
+
+    try:
+        return data["choices"][0]["message"]["content"].strip()
+    except (KeyError, IndexError, TypeError) as e:
+        raise HTTPException(
+            status_code=502, detail=f"LLM response was malformed: {e}"
+        )
+
+
+@app.post("/prompt/rewrite")
+async def prompt_rewrite(req: PromptRewriteRequest):
+    """Proxy an LLM call (prompt rewrite / describe-images) to the
+    configured endpoint and return the completion text."""
+    from app.prompt_prompts import system_prompt_for
+
+    if req.mode == "describe" and not req.images:
+        raise HTTPException(
+            status_code=400, detail="mode 'describe' requires at least one image"
+        )
+    if req.mode in ("generate", "edit") and not (req.prompt or "").strip():
+        raise HTTPException(
+            status_code=400, detail=f"mode '{req.mode}' requires a prompt"
+        )
+    if req.mode == "edit" and not req.images:
+        raise HTTPException(
+            status_code=400, detail="mode 'edit' requires at least one image"
+        )
+
+    # Build the user message: text (if any) + images in upload order,
+    # matching the content shape the frontend used to send directly.
+    user_content: list[dict] = []
+    if req.mode != "describe" and (req.prompt or "").strip():
+        user_content.append({"type": "text", "text": req.prompt.strip()})
+    user_content.extend(
+        {"type": "image_url", "image_url": {"url": img.image_url}}
+        for img in req.images
+        if img.image_url
+    )
+
+    messages = [
+        {"role": "system", "content": system_prompt_for(req.mode)},
+        {"role": "user", "content": user_content},
+    ]
+    text = await _llm_chat_completions(messages)
+    return {"prompt": text}
+
+
 @app.post("/images/cancellations/{request_id}", status_code=202)
 async def cancel_image_request(request_id: str):
     cancellation_event = _active_cancellations.get(request_id)
@@ -349,7 +537,7 @@ async def images_generations(req: ImageGenerationRequest) -> ImagesResponse:
                 quality=req.quality,
                 batch_id=batch_id,
                 output_file=output_file,
-                extra={"steps": req.steps} if req.steps is not None else None,
+                extra=_request_extra(req),
             )
             config["cancellation_event"] = cancellation_event
             if progress_state is not None:
@@ -465,7 +653,7 @@ async def images_edits(req: ImageEditRequest) -> ImagesResponse:
                 quality=req.quality,
                 batch_id=batch_id,
                 output_file=output_file,
-                extra={"steps": req.steps} if req.steps is not None else None,
+                extra=_request_extra(req),
             )
             config["cancellation_event"] = cancellation_event
             if progress_state is not None:

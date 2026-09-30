@@ -10,6 +10,22 @@ server:
 # Which backend to use for image generation
 backend: "qwenimage21"
 
+# LLM settings — the server proxies ALL LLM inference (prompt rewriting,
+# prompt-from-images) to this OpenAI-compatible chat endpoint, so the
+# browser never talks to the LLM directly (no self-signed-cert issues).
+# Values may reference environment variables as ${VAR} or ${VAR:-default}.
+# If endpoint / api_key are omitted (or left empty), the server falls back
+# to the OPENAI_API_BASE and OPENAI_API_KEY environment variables.
+llm:
+    # OpenAI-compatible base endpoint (e.g. https://host:7820/v1)
+    # endpoint: "https://host:7820/v1"     # or ${OPENAI_API_BASE:-}
+    # API key for the endpoint (e.g. a static key for a local llama.cpp/vLLM server)
+    # api_key: "secret"                    # or ${OPENAI_API_KEY:-}
+    # Model name; empty = the endpoint's default model
+    model: "${OPENAI_MODEL:-}"
+    # Set to false to skip TLS certificate verification (self-signed certs)
+    ssl_verify: true
+
 # Backend-specific settings
 backends:
     qwenimage21:
@@ -17,6 +33,12 @@ backends:
         steps: 25
         gguf: "models/qwen_image_2.1_F16.gguf"
         text_encoder_4bit: true
+        # Optional LoRA adapters — first entry is active by default.
+        # Per-request override: lora=<name> (or lora=none), lora_scale=<float>.
+        # lora:
+        #     - path: "/path/to/your-lora.safetensors"
+        #       name: "my-lora"
+        #       scale: 0.8
     flux2klein:
         max_output_size: 1024
     hyper_sdxl:

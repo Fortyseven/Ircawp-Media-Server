@@ -68,6 +68,16 @@ class ImageGenerationRequest(BaseModel):
             None, description="Image quality. Maps to remaster flag for our backends."
         )
     )
+    lora: Optional[str] = Field(
+        None,
+        description="Optional LoRA adapter name for backends that support LoRA "
+        "(e.g. qwenimage21). 'none' disables the backend's default LoRA.",
+    )
+    lora_scale: Optional[float] = Field(
+        None,
+        ge=0.0,
+        description="Optional LoRA scale; overrides the adapter's configured scale.",
+    )
     response_format: Optional[Literal["url", "b64_json"]] = Field(
         None, description="Response format. We always return b64_json."
     )
@@ -124,6 +134,16 @@ class ImageEditRequest(BaseModel):
     quality: Optional[Literal["standard", "hd", "low", "medium", "high", "auto"]] = (
         Field(None, description="Image quality.")
     )
+    lora: Optional[str] = Field(
+        None,
+        description="Optional LoRA adapter name for backends that support LoRA "
+        "(e.g. qwenimage21). 'none' disables the backend's default LoRA.",
+    )
+    lora_scale: Optional[float] = Field(
+        None,
+        ge=0.0,
+        description="Optional LoRA scale; overrides the adapter's configured scale.",
+    )
     input_fidelity: Optional[Literal["high", "low"]] = Field(
         None, description="Fidelity to original input."
     )
@@ -132,6 +152,29 @@ class ImageEditRequest(BaseModel):
     verbose: Optional[bool] = Field(
         False,
         description="If true, include the full prompt in server logs. Default: false (privacy-first).",
+    )
+
+
+class PromptRewriteRequest(BaseModel):
+    """Request body for POST /prompt/rewrite.
+
+    The server proxies this to the configured LLM endpoint (config.yml
+    `llm` section) and returns the LLM's completion text.
+    """
+
+    mode: Literal["generate", "edit", "describe"] = Field(
+        "generate",
+        description=(
+            "generate: rewrite a text-to-image prompt · edit: rewrite an "
+            "image-edit instruction (requires images) · describe: write a "
+            "prompt from the attached images (no user text)."
+        ),
+    )
+    prompt: Optional[str] = Field(
+        None, max_length=32000, description="User prompt text."
+    )
+    images: list[ImageRef] = Field(
+        default_factory=list, description="Input image(s) (base64 data URLs)."
     )
 
 
