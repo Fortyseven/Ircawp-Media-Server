@@ -11,15 +11,19 @@
         DEFAULT_ASPECT_RATIO,
         DEFAULT_OUTPUT_SIZE,
         MATCH_SOURCE,
-        OUTPUT_SIZES,
         dimensionsForAspect,
         getAspectRatioGroups,
     } from "../lib/size-options.js";
     import { promptFromImages, unloadBackends } from "../lib/api.js";
     import { loadDraft, saveDraft } from "../lib/draft.js";
 
-    let { backends = [], defaultBackend = "", generating = false, ongenerate, onabort } =
-        $props();
+    let {
+        backends = [],
+        defaultBackend = "",
+        generating = false,
+        ongenerate,
+        onabort,
+    } = $props();
 
     const initialDraft = untrack(() => loadDraft());
     const initialDraftSettings =
@@ -348,14 +352,14 @@
 
         <label class="field">
             <span class="label mono">output</span>
-            <select
+            <input
+                type="number"
+                placeholder="default"
                 bind:value={outputSize}
+                min="0"
+                max="2048"
                 disabled={generating}
-            >
-                {#each OUTPUT_SIZES as edge}
-                    <option value={edge}>{edge}px</option>
-                {/each}
-            </select>
+            />
         </label>
 
         <label class="field">

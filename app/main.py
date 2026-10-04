@@ -274,6 +274,26 @@ def _build_backend_config(
     return config
 
 
+def _input_max_edge(media_paths: list[str]) -> Optional[int]:
+    """Default max output edge from the first readable input image.
+
+    Rounded to the nearest multiple of 16 and clamped to the API's allowed
+    [256, 4096] range. Returns None if no dimensions can be read, in which
+    case the backend's own default applies.
+    """
+    from PIL import Image
+
+    for path in media_paths:
+        try:
+            with Image.open(path) as img:
+                longest = max(img.width, img.height)
+        except Exception:
+            continue
+        edge = round(longest / 16) * 16
+        return min(4096, max(256, edge))
+    return None
+
+
 def _decode_image_url(image_url: str) -> bytes:
     """Decode a data URL or return raw bytes for a base64 string."""
     if image_url.startswith("data:"):
@@ -631,6 +651,11 @@ async def images_edits(req: ImageEditRequest) -> ImagesResponse:
                 status_code=400, detail="No valid input images provided"
             )
 
+        # Blank output size: match the input image's native longest edge.
+        output_size = req.output_size
+        if output_size is None:
+            output_size = _input_max_edge(temp_media_paths)
+
         try:
             backend = get_backend(backend_id)
         except HTTPException:
@@ -647,7 +672,7 @@ async def images_edits(req: ImageEditRequest) -> ImagesResponse:
             config = _build_backend_config(
                 backend_id=backend_id,
                 size=req.size,
-                output_size=req.output_size,
+                output_size=output_size,
                 true_cfg_scale=req.true_cfg_scale,
                 seed=req.seed,
                 quality=req.quality,

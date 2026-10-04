@@ -49,7 +49,6 @@ class ImageGenerationRequest(BaseModel):
         None,
         ge=256,
         le=4096,
-        multiple_of=16,
         description="Maximum output edge in pixels, preserving the selected aspect ratio.",
     )
     true_cfg_scale: Optional[float] = Field(
@@ -117,8 +116,10 @@ class ImageEditRequest(BaseModel):
         None,
         ge=256,
         le=4096,
-        multiple_of=16,
-        description="Maximum output edge in pixels, preserving the source or selected aspect ratio.",
+        description=(
+            "Maximum output edge in pixels, preserving the source or selected "
+            "aspect ratio. Defaults to the input image's max edge when omitted."
+        ),
     )
     true_cfg_scale: Optional[float] = Field(
         None,

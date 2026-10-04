@@ -1,4 +1,5 @@
 <script>
+    import ImageSizeCaption from "./ImageSizeCaption.svelte";
     import { extractImageFiles } from "../lib/clipboard-images.js";
 
     let { images = $bindable([]) } = $props();
@@ -107,6 +108,7 @@
                         src={img}
                         alt="upload {i + 1}"
                     />
+                    <ImageSizeCaption src={img} />
                     <button
                         type="button"
                         class="thumb-del"
