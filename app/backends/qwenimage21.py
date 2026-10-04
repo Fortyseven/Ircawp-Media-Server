@@ -29,7 +29,6 @@ def _register_qwenimage21_single_file():
     exactly what we need for the GGUF state dict, so we register the same
     mapping for the 2.1 class.
     """
-    from diffusers import QwenImage21Transformer2DModel
     from diffusers.loaders.single_file_model import SINGLE_FILE_LOADABLE_CLASSES
 
     if "QwenImage21Transformer2DModel" not in SINGLE_FILE_LOADABLE_CLASSES:
