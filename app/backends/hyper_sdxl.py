@@ -46,13 +46,18 @@ class hyper_sdxl(MediaBackend):
         else:
             output_file = config.get("output_file", DEFAULT_FILENAME)
 
-        seed = random.randint(0, 100000)
+        seed = config.get("seed")
+        if seed is None:
+            seed = random.randint(0, 100000)
         steps = config.get("steps", 1)
+        # LCM models are CFG-free (guidance is distilled into the weights);
+        # values above 1 run the untrained negative-prompt path.
+        guidance = config.get("guidance_scale", 0)
 
         image = self.pipe(
             prompt=prompt,
             num_inference_steps=steps,
-            guidance_scale=0,
+            guidance_scale=guidance,
             seed=seed,
             timesteps=[800],
             generator=torch.Generator(device=DEVICE).manual_seed(seed),
@@ -65,7 +70,7 @@ class hyper_sdxl(MediaBackend):
             prompt,
             seed=seed,
             model="hyper_sdxl",
-            guidance_scale=0,
+            guidance_scale=guidance,
             inference_steps=steps,
             width=image.width,
             height=image.height,

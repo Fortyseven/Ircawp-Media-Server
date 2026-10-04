@@ -18,6 +18,7 @@
     } from "./lib/db.js";
     let backends = $state([]);
     let defaultBackend = $state("");
+    let capabilities = $state({});
     let generating = $state(false);
     let isRevising = $state(false);
     let error = $state("");
@@ -49,6 +50,7 @@
             const b = await getBackends();
             backends = b.backends;
             defaultBackend = b.default;
+            capabilities = b.capabilities ?? {};
         } catch (e) {
             error = `backend list: ${e.message}`;
         }
@@ -196,6 +198,7 @@
                     bind:this={promptFormRef}
                     {backends}
                     {defaultBackend}
+                    {capabilities}
                     {generating}
                     ongenerate={handleGenerate}
                     onabort={handleAbort}

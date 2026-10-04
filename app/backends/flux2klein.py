@@ -62,7 +62,10 @@ class flux2klein(MediaBackend):
         scale_result = config.get("scale", 1.0)
         do_remaster = config.get("remaster", False)
 
-        seed = torch.randint(0, 1000000, (1,)).item()
+        seed = config.get("seed")
+        if seed is None:
+            seed = torch.randint(0, 1000000, (1,)).item()
+        guidance = config.get("guidance_scale", CFG_SCALE)
         max_output_size = config.get("max_output_size", DEFAULT_MAX_OUTPUT_SIZE)
 
         # Compute dimensions
@@ -125,7 +128,7 @@ class flux2klein(MediaBackend):
             width=width,
             height=height,
             num_inference_steps=steps,
-            guidance_scale=CFG_SCALE,
+            guidance_scale=guidance,
             generator=torch.Generator("cpu").manual_seed(seed),
             image=media_pil if has_image else None,
             callback_on_step_end=self.cancellation_callback(config, steps),
@@ -137,7 +140,7 @@ class flux2klein(MediaBackend):
             final_prompt,
             seed=seed,
             model="flux2klein",
-            guidance_scale=CFG_SCALE,
+            guidance_scale=guidance,
             inference_steps=steps,
             width=width,
             height=height,

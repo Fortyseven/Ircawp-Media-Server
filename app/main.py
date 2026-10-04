@@ -202,6 +202,32 @@ def _image_to_response(image_path: str, final_prompt: str | None = None) -> Imag
     return img
 
 
+# Per-backend capabilities — the single source of truth for which knobs each
+# model honors, advertised to clients via /backends. `cfg` is the backend
+# config key the request's true_cfg_scale is forwarded as (absent: the model
+# has no guidance knob); `cfg_experimental` marks CFG-free distillations whose
+# pipeline accepts guidance but was never trained with it; `seed` honors a
+# deterministic generation seed.
+BACKEND_CAPABILITIES = {
+    "qwenimage21": {"cfg": "true_cfg_scale", "seed": True},
+    "flux2klein": {"cfg": "guidance_scale", "seed": True},
+    "sd15": {"cfg": "guidance_scale", "seed": True},
+    "sdxs": {"cfg": "guidance_scale", "seed": True},
+    "hyper_sdxl": {"cfg": "guidance_scale", "cfg_experimental": True, "seed": True},
+    "zimageturbo": {"cfg": "guidance_scale", "cfg_experimental": True, "seed": True},
+}
+
+
+def _backend_capabilities(backend_id: str) -> dict:
+    """Client-facing capability flags for one backend (see BACKEND_CAPABILITIES)."""
+    caps = BACKEND_CAPABILITIES.get(backend_id, {})
+    return {
+        "cfg": "cfg" in caps,
+        "cfg_experimental": caps.get("cfg_experimental", False),
+        "seed": caps.get("seed", False),
+    }
+
+
 def _request_extra(req) -> dict:
     """Optional per-request params (steps, lora, lora_scale) for backend config."""
     extra: dict = {}
@@ -245,10 +271,10 @@ def _build_backend_config(
     if output_size is not None:
         config["max_output_size"] = output_size
 
-    if backend_id == "qwenimage21" and true_cfg_scale is not None:
-        config["true_cfg_scale"] = true_cfg_scale
-
-    if backend_id == "qwenimage21" and seed is not None:
+    caps = BACKEND_CAPABILITIES.get(backend_id, {})
+    if true_cfg_scale is not None and caps.get("cfg"):
+        config[caps["cfg"]] = true_cfg_scale
+    if seed is not None and caps.get("seed"):
         config["seed"] = seed
 
     # Parse size into width/height if provided
@@ -354,9 +380,14 @@ async def health():
 
 @app.get("/backends")
 async def backends():
+    configured = sorted((CONFIG.get("backends") or {}).keys())
     return {
         "default": DEFAULT_BACKEND,
-        "backends": sorted((CONFIG.get("backends") or {}).keys()),
+        "backends": configured,
+        "capabilities": {
+            backend_id: _backend_capabilities(backend_id)
+            for backend_id in configured
+        },
     }
 
 

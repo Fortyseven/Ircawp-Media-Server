@@ -56,7 +56,12 @@ class zimageturbo(MediaBackend):
         else:
             output_file = config.get("output_file", DEFAULT_FILENAME)
 
-        seed = torch.randint(0, 1000000, (1,)).item()
+        seed = config.get("seed")
+        if seed is None:
+            seed = torch.randint(0, 1000000, (1,)).item()
+        # Turbo is a CFG-free distillation; values above 1 hit the untrained
+        # guidance path.
+        guidance = config.get("guidance_scale", CFG_SCALE)
         steps = config.get("steps", INF_STEPS)
 
         # Check if width/height are provided directly (from size param)
@@ -89,7 +94,7 @@ class zimageturbo(MediaBackend):
             width=width,
             height=height,
             num_inference_steps=steps,
-            guidance_scale=CFG_SCALE,
+            guidance_scale=guidance,
             generator=torch.Generator("cpu").manual_seed(seed),
             callback_on_step_end=self.cancellation_callback(config, steps),
         ).images[0]
@@ -100,7 +105,7 @@ class zimageturbo(MediaBackend):
             final_prompt,
             seed=seed,
             model="zimageturbo",
-            guidance_scale=CFG_SCALE,
+            guidance_scale=guidance,
             inference_steps=steps,
             width=width,
             height=height,

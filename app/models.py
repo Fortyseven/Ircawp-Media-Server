@@ -54,13 +54,18 @@ class ImageGenerationRequest(BaseModel):
     true_cfg_scale: Optional[float] = Field(
         None,
         ge=0,
-        description="Optional classifier-free guidance scale for supported backends.",
+        description=(
+            "Optional classifier-free guidance scale, forwarded to the "
+            "backend's native guidance parameter (model default applies when "
+            "omitted). Experimental on CFG-free distillations (hyper_sdxl, "
+            "zimageturbo)."
+        ),
     )
     seed: Optional[int] = Field(
         None,
         ge=0,
         le=4294967295,
-        description="Optional deterministic generation seed for supported backends.",
+        description="Optional deterministic generation seed (all backends).",
     )
     quality: Optional[Literal["standard", "hd", "low", "medium", "high", "auto"]] = (
         Field(
@@ -124,13 +129,18 @@ class ImageEditRequest(BaseModel):
     true_cfg_scale: Optional[float] = Field(
         None,
         ge=0,
-        description="Optional classifier-free guidance scale for supported backends.",
+        description=(
+            "Optional classifier-free guidance scale, forwarded to the "
+            "backend's native guidance parameter (model default applies when "
+            "omitted). Experimental on CFG-free distillations (hyper_sdxl, "
+            "zimageturbo)."
+        ),
     )
     seed: Optional[int] = Field(
         None,
         ge=0,
         le=4294967295,
-        description="Optional deterministic generation seed for supported backends.",
+        description="Optional deterministic generation seed (all backends).",
     )
     quality: Optional[Literal["standard", "hd", "low", "medium", "high", "auto"]] = (
         Field(None, description="Image quality.")

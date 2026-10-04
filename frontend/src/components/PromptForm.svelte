@@ -20,6 +20,7 @@
     let {
         backends = [],
         defaultBackend = "",
+        capabilities = {},
         generating = false,
         ongenerate,
         onabort,
@@ -49,7 +50,8 @@
     let outputSize = $state(
         initialDraftSettings.outputSize ?? DEFAULT_OUTPUT_SIZE,
     );
-    let trueCfgScale = $state(initialDraftSettings.trueCfgScale ?? 1.0);
+    // Empty field ("default" placeholder) means the model's own tuned default.
+    let trueCfgScale = $state(initialDraftSettings.trueCfgScale ?? undefined);
     let seed = $state(initialDraftSettings.seed ?? undefined);
     let hadImages = initialImages.length > 0;
     let unloading = $state(false);
@@ -63,9 +65,12 @@
     let promptNote = $state("");
 
     const aspectRatioGroups = $derived(getAspectRatioGroups(images.length > 0));
-    const supportsQwenControls = $derived(
-        (model || defaultBackend) === "qwenimage21",
-    );
+    // Per-model knobs, advertised by the server via /backends. Unknown
+    // backends expose nothing (safe default: controls hidden, model defaults).
+    const activeCaps = $derived(capabilities[model || defaultBackend] ?? {});
+    const supportsCfg = $derived(activeCaps.cfg === true);
+    const cfgExperimental = $derived(activeCaps.cfg_experimental === true);
+    const supportsSeed = $derived(activeCaps.seed === true);
 
     // Dropdown display order: name-sorted, independent of storage order.
     const sorted = $derived(sortedTemplates(templates));
@@ -168,8 +173,10 @@
             size: dimensionsForAspect(aspectRatio, outputSize),
             outputSize,
             aspectRatio,
-            trueCfgScale: supportsQwenControls ? trueCfgScale : undefined,
-            seed: supportsQwenControls ? seed : undefined,
+            // Empty input (field cleared) means "model default".
+            trueCfgScale:
+                supportsCfg && trueCfgScale !== "" ? trueCfgScale : undefined,
+            seed: supportsSeed && seed !== "" ? seed : undefined,
             n,
             steps,
             images,
@@ -373,9 +380,9 @@
             />
         </label>
 
-        {#if supportsQwenControls}
+        {#if supportsCfg}
             <label class="field small">
-                <span class="label mono">true cfg</span>
+                <span class="label mono">cfg scale</span>
                 <input
                     type="number"
                     bind:value={trueCfgScale}
@@ -384,8 +391,16 @@
                     placeholder="default"
                     disabled={generating}
                 />
+                {#if cfgExperimental}
+                    <span class="hint mono">
+                        CFG-free distillation — values above 1 run an untrained
+                        guidance path (experimental)
+                    </span>
+                {/if}
             </label>
+        {/if}
 
+        {#if supportsSeed}
             <label class="field">
                 <span class="label mono">seed</span>
                 <input
