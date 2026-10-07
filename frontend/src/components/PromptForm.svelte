@@ -1,6 +1,13 @@
 <script>
     import { untrack } from "svelte";
-    import ImageUpload from "./ImageUpload.svelte";
+    import EditingImages from "./EditingImages.svelte";
+    import {
+        getEntries,
+        has,
+        isReady,
+        resolve,
+        setTrayIds,
+    } from "../lib/media-bin.svelte.js";
     import PromptTemplates from "./PromptTemplates.svelte";
     import {
         applyTemplate,
@@ -31,8 +38,15 @@
         initialDraft.settings && typeof initialDraft.settings === "object"
             ? initialDraft.settings
             : {};
+    // Tray entries are pointers into the media bin ({ binId }), never
+    // copies. Legacy drafts stored raw data URLs; those are dropped here —
+    // App migrates them into the bin and rewrites the draft before this
+    // form mounts when such a draft is present.
     const initialImages = Array.isArray(initialDraft.images)
-        ? initialDraft.images
+        ? initialDraft.images.filter(
+              (i) =>
+                  i && typeof i === "object" && typeof i.binId === "string",
+          )
         : [];
 
     let prompt = $state(initialDraft.prompt ?? "");
@@ -114,6 +128,21 @@
         });
     });
 
+    // Publish the tray's bin ids so the media bin can badge "in queue".
+    $effect(() => {
+        setTrayIds(images.map((i) => i.binId));
+    });
+
+    // Cascade: drop tray pointers whose bin entry was deleted (or was
+    // already gone before the bin finished loading).
+    $effect(() => {
+        if (!isReady()) return;
+        getEntries(); // track bin mutations
+        if (images.some((i) => !has(i.binId))) {
+            images = images.filter((i) => has(i.binId));
+        }
+    });
+
     function handleTemplatesChange(list) {
         templates = list;
         if (templateName && !list.some((t) => t.name === templateName)) {
@@ -152,7 +181,9 @@
         promptNote = "";
         prompting = true;
         try {
-            const generated = await promptFromImages({ images });
+            const generated = await promptFromImages({
+                images: resolve(images.map((i) => i.binId)),
+            });
             prompt = generated;
         } catch (e) {
             if (e.name !== "AbortError") {
@@ -179,7 +210,8 @@
             seed: supportsSeed && seed !== "" ? seed : undefined,
             n,
             steps,
-            images,
+            // Resolve tray pointers to data URLs at the API edge.
+            images: resolve(images.map((i) => i.binId)),
             rewritePrompt,
         });
     }
@@ -188,8 +220,8 @@
         prompt = text;
     }
 
-    export function addImage(dataUrl) {
-        images = [...images, dataUrl];
+    export function addBinIds(ids) {
+        images = [...images, ...ids.map((binId) => ({ binId }))];
     }
 
     function handleShortcut(event) {
@@ -267,7 +299,10 @@
         {generating ? "developing…" : images.length ? "edit" : "generate"}
     </button>
 
-    <ImageUpload bind:images />
+    <EditingImages
+        bind:images
+        onbinids={addBinIds}
+    />
 
     <div class="rewrite-row">
         <label class="rewrite-toggle">

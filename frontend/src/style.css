@@ -138,6 +138,11 @@ body {
   grid-template-columns: minmax(0, 1fr) 160px;
 }
 
+.content-shell.has-history .history {
+  grid-column: 2;
+  grid-row: 1;
+}
+
 .workspace {
   display: grid;
   grid-template-columns: 400px 1fr;
@@ -800,6 +805,97 @@ input[type="number"]:disabled {
   font-style: italic;
 }
 
+/* ── media bin ──────────────────────────────────────────────── */
+
+.media-bin {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 7rem);
+  min-width: 0;
+  /* keep the bin in the main column; grid auto-placement would otherwise
+     seat it in the history column as the second item in row 1 */
+  grid-column: 1;
+  grid-row: 2;
+  padding: 0.4rem;
+  border: 1.5px dashed transparent;
+  border-radius: 8px;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.media-bin.dragging {
+  border-color: var(--amber);
+  background: var(--amber-dim);
+}
+
+.media-bin-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.6rem;
+}
+
+.media-bin-head h2 {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.media-bin-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.bin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.6rem;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.35rem;
+}
+
+.frame-static {
+  cursor: default;
+}
+
+.frame-badge {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 1;
+  font-size: 0.6rem;
+  line-height: 1.4;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--amber);
+  color: var(--bg-deep);
+}
+
+.dropzone-hint {
+  cursor: default;
+}
+
+.bin-error {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  font-size: 0.78rem;
+  padding: 0.8rem 1rem;
+  border: 1.5px dashed var(--danger);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--danger) 8%, var(--bg-deep));
+}
+
+.bin-error p {
+  margin: 0;
+  flex: 1;
+}
+
 /* ── history filmstrip ──────────────────────────────────────── */
 
 .history {
@@ -840,6 +936,16 @@ input[type="number"]:disabled {
 .ghost:hover {
   color: var(--danger);
   border-color: rgba(224, 90, 78, 0.4);
+}
+
+.ghost:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ghost:disabled:hover {
+  color: var(--dim);
+  border-color: transparent;
 }
 
 .filmstrip {
@@ -917,6 +1023,11 @@ input[type="number"]:disabled {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .content-shell.has-history .history {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
   .history {
     position: static;
     max-height: none;
@@ -987,6 +1098,17 @@ input[type="number"]:disabled {
 
 .frame-del:hover {
   background: var(--danger);
+}
+
+/* In-use bin entries can't be deleted; the × stays visible on hover to
+   explain why (tooltip), but dimmed and inert. */
+.frame-del:disabled {
+  cursor: not-allowed;
+  color: var(--muted);
+}
+
+.frame-del:disabled:hover {
+  background: rgba(0, 0, 0, 0.7);
 }
 
 .frame-useprompt {

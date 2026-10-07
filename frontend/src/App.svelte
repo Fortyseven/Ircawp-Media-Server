@@ -3,6 +3,7 @@
     import PromptForm from "./components/PromptForm.svelte";
     import ResultGrid from "./components/ResultGrid.svelte";
     import History from "./components/History.svelte";
+    import MediaBin from "./components/MediaBin.svelte";
     import {
         cancelImage,
         createImage,
@@ -16,6 +17,12 @@
         deleteGeneration,
         clearHistory,
     } from "./lib/db.js";
+    import { hasLegacyImages, migrateDraft } from "./lib/draft.js";
+    import {
+        initMediaBin,
+        importHistoryImage,
+        isReady,
+    } from "./lib/media-bin.svelte.js";
     let backends = $state([]);
     let defaultBackend = $state("");
     let capabilities = $state({});
@@ -29,6 +36,9 @@
     let requestController = null;
     let activeRequestId = null;
     let promptFormRef = $state(null);
+    // Gate the form on media-bin boot only when a legacy draft (raw data
+    // URLs) needs migrating first — normal loads render immediately.
+    let booted = $state(!hasLegacyImages());
 
     async function pollProgress(requestId) {
         try {
@@ -54,6 +64,17 @@
         } catch (e) {
             error = `backend list: ${e.message}`;
         }
+        try {
+            await initMediaBin();
+            // Import legacy draft images into the bin and rewrite the draft
+            // before the form mounts — the form's save effect would
+            // otherwise overwrite the draft without them.
+            if (hasLegacyImages()) migrateDraft();
+        } catch (e) {
+            console.error("media bin init failed", e);
+            error = e.message;
+        }
+        booted = true;
         refreshHistory();
     });
 
@@ -148,10 +169,27 @@
         promptFormRef?.setPrompt(prompt);
     }
 
-    function handleAddToEditQueue(item) {
-        for (const image of item.images) {
-            promptFormRef?.addImage(`data:image/png;base64,${image.b64_json}`);
+    // Clear the init-timeout note once the bin recovers (e.g. after the
+    // user closes the blocking tab and hits retry in the bin panel).
+    $effect(() => {
+        if (isReady() && error.startsWith("storage open timed out")) {
+            error = "";
         }
+    });
+
+    // Copy a history item's images into the media bin (deliberate copies:
+    // clearing history must not lose bin entries). The user then drags bin
+    // frames into the editing section.
+    function handleCopyToBin(item) {
+        for (const image of item.images ?? []) {
+            if (image.b64_json) importHistoryImage(image.b64_json);
+        }
+    }
+
+    function handleImportFromHistory(id) {
+        // DnD payloads are strings; history ids are numeric (autoincrement).
+        const item = history.find((h) => String(h.id) === id);
+        if (item) handleCopyToBin(item);
     }
 
     async function handleDelete(id) {
@@ -194,15 +232,17 @@
     >
         <section class="workspace">
             <div class="panel form-panel">
-                <PromptForm
-                    bind:this={promptFormRef}
-                    {backends}
-                    {defaultBackend}
-                    {capabilities}
-                    {generating}
-                    ongenerate={handleGenerate}
-                    onabort={handleAbort}
-                />
+                {#if booted}
+                    <PromptForm
+                        bind:this={promptFormRef}
+                        {backends}
+                        {defaultBackend}
+                        {capabilities}
+                        {generating}
+                        ongenerate={handleGenerate}
+                        onabort={handleAbort}
+                    />
+                {/if}
             </div>
 
             <div class="panel result-panel">
@@ -252,6 +292,8 @@
             </div>
         </section>
 
+        <MediaBin onimportfromhistory={handleImportFromHistory} />
+
         <History
             items={history}
             activeId={results?.id ?? null}
@@ -259,7 +301,7 @@
             ondelete={handleDelete}
             onclear={handleClear}
             onuseprompt={handleUsePrompt}
-            onaddtoeditqueue={handleAddToEditQueue}
+            oncopytobin={handleCopyToBin}
         />
     </main>
 </div>

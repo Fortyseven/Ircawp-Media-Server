@@ -1,4 +1,8 @@
 <script>
+    import MediaFrame from "./MediaFrame.svelte";
+
+    const HISTORY_TYPE = "application/x-ircawp-history";
+
     let {
         items = [],
         activeId = null,
@@ -6,7 +10,7 @@
         ondelete,
         onclear,
         onuseprompt,
-        onaddtoeditqueue,
+        oncopytobin,
     } = $props();
 
     let openMenuId = $state(null);
@@ -42,39 +46,27 @@
         <div class="filmstrip">
             <div class="strip-track">
                 {#each items as item (item.id)}
-                    <div
-                        class="frame"
-                        class:active={item.id === activeId}
+                    <MediaFrame
+                        src="data:image/png;base64,{item.images[0]
+                            ?.b64_json}"
+                        label={item.model +
+                            (item.images.length > 1
+                                ? ` ×${item.images.length}`
+                                : "")}
+                        alt={item.prompt}
+                        title={itemTooltip(item)}
+                        active={item.id === activeId}
+                        draggable
+                        ondragstart={(e) => {
+                            e.dataTransfer.setData(
+                                HISTORY_TYPE,
+                                String(item.id),
+                            );
+                            e.dataTransfer.effectAllowed = "copy";
+                        }}
+                        onview={() => onview(item)}
+                        ondelete={() => ondelete(item.id)}
                     >
-                        <button
-                            type="button"
-                            class="frame-view"
-                            onclick={() => onview(item)}
-                            title={itemTooltip(item)}
-                        >
-                            <img
-                                src="data:image/png;base64,{item.images[0]
-                                    ?.b64_json}"
-                                alt={item.prompt}
-                                loading="lazy"
-                            />
-                            <span class="frame-label mono"
-                                >{item.model}{item.images.length > 1
-                                    ? ` ×${item.images.length}`
-                                    : ""}</span
-                            >
-                        </button>
-                        <button
-                            type="button"
-                            class="frame-del"
-                            aria-label="delete from history"
-                            onclick={(e) => {
-                                e.stopPropagation();
-                                ondelete(item.id);
-                            }}
-                        >
-                            ×
-                        </button>
                         <div class="frame-menu">
                             <button
                                 type="button"
@@ -109,18 +101,19 @@
                                     <button
                                         type="button"
                                         role="menuitem"
+                                        title="Import a copy of this image into the media bin"
                                         onclick={(e) => {
                                             e.stopPropagation();
-                                            onaddtoeditqueue(item);
+                                            oncopytobin(item);
                                             closeMenu();
                                         }}
                                     >
-                                        add to edit queue
+                                        copy to media bin
                                     </button>
                                 </div>
                             {/if}
                         </div>
-                    </div>
+                    </MediaFrame>
                 {/each}
             </div>
         </div>
