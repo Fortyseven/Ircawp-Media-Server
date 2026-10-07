@@ -54,7 +54,8 @@
         if (sourceEdge >= outputEdge) return undefined;
 
         const scale = outputEdge / sourceEdge;
-        return `width: ${sourceDimensions.width * scale}px;`;
+        // return `width: ${sourceDimensions.width * scale}px;`;
+        return `width: 100%;`;
     }
 </script>
 
