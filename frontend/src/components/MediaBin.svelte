@@ -34,10 +34,7 @@
     function isRelevantDrag(event) {
         const types = event.dataTransfer?.types;
         if (!types) return false;
-        return (
-            types.includes(HISTORY_TYPE) ||
-            types.includes("Files")
-        );
+        return types.includes(HISTORY_TYPE) || types.includes("Files");
     }
 
     function handleDrop(event) {
@@ -62,7 +59,7 @@
 <svelte:window onpaste={handlePaste} />
 
 <section
-    class="media-bin"
+    class="media-bin panel"
     class:dragging
     ondragover={(e) => {
         if (isRelevantDrag(e)) {
@@ -120,11 +117,9 @@
                     }}
                     badge={traySet.has(entry.id) ? "in queue" : null}
                     deleteDisabled={traySet.has(entry.id)}
-                    deleteTitle={
-                        traySet.has(entry.id)
-                            ? "in use — remove from editing images first"
-                            : undefined
-                    }
+                    deleteTitle={traySet.has(entry.id)
+                        ? "in use — remove from editing images first"
+                        : undefined}
                     ondelete={() => remove(entry.id)}
                 />
             {/each}
@@ -146,10 +141,7 @@
             class="dropzone"
             onclick={() => fileInput.click()}
         >
-            <span
-                class="mono"
-                >drop or paste media, or browse</span
-            >
+            <span class="mono">drop or paste media, or browse</span>
         </button>
     {/if}
 

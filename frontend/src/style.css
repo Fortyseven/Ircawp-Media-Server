@@ -47,10 +47,17 @@ body {
   color: var(--dim);
 }
 
+/* App fills the window: header takes what it needs, the content shell gets
+   the rest and every panel scrolls internally instead of the page. */
 .app {
   max-width: 1380px;
   margin: 0 auto;
-  padding: 1.25rem 1.5rem 3rem;
+  padding: 1.25rem 1.5rem;
+  height: 100vh;
+  height: 100dvh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
 }
 
 /* ── header ─────────────────────────────────────────────────── */
@@ -129,9 +136,12 @@ body {
 .content-shell {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  /* row 1 (workspace) takes the slack, row 2 (media bin) takes its content,
+     capped by the bin's own max-height */
+  grid-template-rows: minmax(0, 1fr) auto;
   gap: 1rem;
   margin-top: 1rem;
-  align-items: start;
+  min-height: 0;
 }
 
 .content-shell.has-history {
@@ -140,20 +150,31 @@ body {
 
 .content-shell.has-history .history {
   grid-column: 2;
-  grid-row: 1;
+  /* span both rows so the filmstrip gets the full shell height */
+  grid-row: 1 / -1;
 }
 
 .workspace {
   display: grid;
   grid-template-columns: 400px 1fr;
+  grid-template-rows: minmax(0, 1fr);
   gap: 1rem;
   align-items: start;
   min-width: 0;
+  min-height: 0;
+}
+
+/* Form keeps its natural height but can't grow past the workspace row; the
+   tray stretches to fill the row and the image letterboxes inside it. */
+.form-panel {
+  max-height: 100%;
+  overflow-y: auto;
 }
 
 @media (max-width: 900px) {
   .workspace {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
   }
 }
 
@@ -165,9 +186,11 @@ body {
 }
 
 .result-panel {
-  min-height: 380px;
+  align-self: stretch;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
 }
 
 /* ── form ───────────────────────────────────────────────────── */
@@ -738,10 +761,20 @@ input[type="number"]:disabled {
   margin-bottom: 0.8rem;
 }
 
+/* The image area is the flex-1 middle of the tray: a single image fills it
+   letterboxed (object-fit: contain) so it never overflows the window;
+   multi-image grids scroll inside the same space. */
 .grid {
   display: grid;
   grid-template-columns: 1fr;
   gap: 0.8rem;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.grid:not(.multi) {
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .grid.multi {
@@ -754,6 +787,9 @@ input[type="number"]:disabled {
   border-radius: 8px;
   overflow: hidden;
   background: var(--bg-deep);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .shot img {
@@ -762,6 +798,9 @@ input[type="number"]:disabled {
   max-width: 100%;
   height: auto;
   margin: 0 auto;
+  flex: 1;
+  min-height: 0;
+  object-fit: contain;
 }
 
 .shot figcaption {
@@ -771,6 +810,7 @@ input[type="number"]:disabled {
   padding: 0.4rem 0.6rem;
   font-size: 0.7rem;
   color: var(--muted);
+  flex-shrink: 0;
 }
 
 .shot .revised {
@@ -810,14 +850,16 @@ input[type="number"]:disabled {
 .media-bin {
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 7rem);
+  /* share the vertical space with the workspace instead of eating it:
+     the bin scrolls internally, the workspace row keeps its height */
+  max-height: 40vh;
   min-width: 0;
+  align-self: start;
   /* keep the bin in the main column; grid auto-placement would otherwise
      seat it in the history column as the second item in row 1 */
   grid-column: 1;
   grid-row: 2;
   padding: 0.4rem;
-  border: 1.5px dashed transparent;
   border-radius: 8px;
   transition:
     border-color 0.15s,
@@ -898,12 +940,12 @@ input[type="number"]:disabled {
 
 /* ── history filmstrip ──────────────────────────────────────── */
 
+/* Stretches to the full shell height (grid-row 1 / -1); the filmstrip
+   scrolls inside it when there's more history than fits. */
 .history {
-  position: sticky;
-  top: 1rem;
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 7rem);
+  min-height: 0;
   min-width: 0;
 }
 
@@ -949,6 +991,7 @@ input[type="number"]:disabled {
 }
 
 .filmstrip {
+  flex: 1;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
@@ -1176,6 +1219,38 @@ input[type="number"]:disabled {
 .frame-menu-list button:hover {
   background: var(--amber-dim);
   color: var(--amber-bright);
+}
+
+/* ── ultrawide (≥1440px) ──────────────────────────────────────
+  Drop the 1380px cap and move the media bin to the left of the
+  prompt form: bin | form | results | history. The bin keeps its
+  base grid-column: 1; only the row changes, and the workspace
+  auto-flows into the free column. */
+
+@media (min-width: 1440px) {
+  .app {
+    max-width: none;
+    padding-inline: 2rem;
+  }
+
+  .content-shell {
+    grid-template-columns: 320px minmax(0, 1fr);
+  }
+
+  .content-shell.has-history {
+    grid-template-columns: 320px minmax(0, 1fr) 160px;
+  }
+
+  .content-shell.has-history .history {
+    grid-column: 3;
+  }
+
+  .media-bin {
+    grid-row: 1;
+    /* sidebar position: it can take more of the height, the workspace is
+       beside it, not below it */
+    max-height: 70vh;
+  }
 }
 
 /* ── scrollbars ─────────────────────────────────────────────── */
