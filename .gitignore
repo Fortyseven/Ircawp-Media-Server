@@ -7,3 +7,4 @@ scripts/download_qwenimage21_base.py
 frontend/node_modules
 .venv
 plans
+_untracked
