@@ -5,6 +5,7 @@
     let {
         src,
         label,
+        showLabel = true,
         alt = undefined,
         title = undefined,
         active = false,
@@ -21,34 +22,38 @@
 <div
     class="frame"
     class:active
-    draggable={draggable}
-    ondragstart={ondragstart}
+    {draggable}
+    {ondragstart}
 >
     {#if onview}
         <button
             type="button"
             class="frame-view"
             onclick={onview}
-            title={title}
+            {title}
         >
             <img
-                src={src}
+                {src}
                 alt={alt ?? label}
                 loading="lazy"
             />
-            <span class="frame-label mono">{label}</span>
+            {#if showLabel}
+                <span class="frame-label mono">{label}</span>
+            {/if}
         </button>
     {:else}
         <div
             class="frame-view frame-static"
-            title={title}
+            {title}
         >
             <img
-                src={src}
+                {src}
                 alt={alt ?? label}
                 loading="lazy"
             />
-            <span class="frame-label mono">{label}</span>
+            {#if showLabel}
+                <span class="frame-label mono">{label}</span>
+            {/if}
         </div>
     {/if}
     {#if badge}

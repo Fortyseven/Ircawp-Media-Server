@@ -106,6 +106,7 @@
                 <MediaFrame
                     src={entry.dataUrl}
                     label={entry.mime.split("/").pop()}
+                    showLabel={false}
                     title="drag into editing images"
                     draggable
                     ondragstart={(e) => {
