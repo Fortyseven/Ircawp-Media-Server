@@ -83,15 +83,22 @@ def _expand_env_recursive(node):
 
 def load_config(path: str = "config.yml") -> dict:
     config_path = Path(__file__).parent.parent / path
-    if not config_path.is_file():
-        return {}
-    with open(config_path) as f:
-        return _expand_env_recursive(yaml.safe_load(f) or {})
+    config = {}
+    if config_path.is_file():
+        with open(config_path) as f:
+            config = _expand_env_recursive(yaml.safe_load(f) or {})
+    backend = config.get("backend") if isinstance(config, dict) else None
+    if not isinstance(backend, str) or not backend.strip():
+        raise ValueError(
+            f"{config_path}: 'backend' must be explicitly configured as a non-empty string"
+        )
+    return config
 
 
 CONFIG = load_config()
 SERVER_CONFIG = CONFIG.get("server", {})
-DEFAULT_BACKEND = CONFIG.get("backend", "flux2klein")
+DEFAULT_BACKEND = CONFIG["backend"]
+
 
 def _llm_config(config: dict) -> dict:
     """LLM proxy settings with environment-variable fallbacks.
@@ -210,6 +217,11 @@ def _image_to_response(image_path: str, final_prompt: str | None = None) -> Imag
 # deterministic generation seed.
 BACKEND_CAPABILITIES = {
     "qwenimage21": {"cfg": "true_cfg_scale", "seed": True},
+    "qwenimage21turbo": {
+        "cfg": "true_cfg_scale",
+        "cfg_experimental": True,
+        "seed": True,
+    },
     "flux2klein": {"cfg": "guidance_scale", "seed": True},
     "sd15": {"cfg": "guidance_scale", "seed": True},
     "sdxs": {"cfg": "guidance_scale", "seed": True},
@@ -385,8 +397,7 @@ async def backends():
         "default": DEFAULT_BACKEND,
         "backends": configured,
         "capabilities": {
-            backend_id: _backend_capabilities(backend_id)
-            for backend_id in configured
+            backend_id: _backend_capabilities(backend_id) for backend_id in configured
         },
     }
 
@@ -470,15 +481,9 @@ async def _llm_chat_completions(messages: list[dict]) -> str:
     try:
         data = response.json()
     except (httpx.DecodingError, ValueError) as e:
-        raise HTTPException(
-            status_code=502, detail=f"LLM response was not JSON: {e}"
-        )
+        raise HTTPException(status_code=502, detail=f"LLM response was not JSON: {e}")
     if response.status_code >= 400:
-        detail = (
-            data.get("detail")
-            if isinstance(data, dict)
-            else None
-        ) or str(data)
+        detail = (data.get("detail") if isinstance(data, dict) else None) or str(data)
         raise HTTPException(
             status_code=response.status_code,
             detail=f"LLM endpoint error ({response.status_code}): {detail}",
@@ -487,9 +492,7 @@ async def _llm_chat_completions(messages: list[dict]) -> str:
     try:
         return data["choices"][0]["message"]["content"].strip()
     except (KeyError, IndexError, TypeError) as e:
-        raise HTTPException(
-            status_code=502, detail=f"LLM response was malformed: {e}"
-        )
+        raise HTTPException(status_code=502, detail=f"LLM response was malformed: {e}")
 
 
 @app.post("/prompt/rewrite")

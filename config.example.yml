@@ -28,11 +28,21 @@ llm:
 
 # Backend-specific settings
 backends:
+    qwenimage21turbo:
+        max_output_size: 1024
+        steps: 8
+        gguf: "models/qwen_image_2.1_turbo_Q4_K_S.gguf"
+        base_model: "Qwen/Qwen-Image-2.1-Turbo"
+        text_encoder_4bit: true
+        # Custom VAE (HF repo id or local dir); omit to use the base VAE.
+        # vae: "madebyollin/texture-fix-vae-for-qwen-image-2.1"
     qwenimage21:
         max_output_size: 1024
         steps: 25
         gguf: "models/qwen_image_2.1_F16.gguf"
         text_encoder_4bit: true
+        # Custom VAE (HF repo id or local dir); omit to use the base VAE.
+        # vae: "madebyollin/texture-fix-vae-for-qwen-image-2.1"
         # Optional LoRA adapters — first entry is active by default.
         # Per-request override: lora=<name> (or lora=none), lora_scale=<float>.
         # lora:

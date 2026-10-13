@@ -59,6 +59,7 @@ Both endpoints return the same `ImagesResponse`:
 Available backends (set via `model` field or `config.yml`):
 
 - `qwenimage21` (default) — Qwen-Image-2.1, GGUF 4-bit transformer + 4-bit text encoder, max 1024px (see [docs/QWENIMAGE21.md](docs/QWENIMAGE21.md))
+- `qwenimage21turbo` — Qwen-Image-2.1-Turbo, local Q4_K_S GGUF, eight-step sampling (see [docs/QWENIMAGE21-TURBO.md](docs/QWENIMAGE21-TURBO.md))
 - `flux2klein` — max 1024px
 - `hyper_sdxl` — max 1024px
 - `sd15` — max 512px
@@ -102,6 +103,8 @@ backends:
 |------------------|--------|----------------|------------------------------------------------------|
 | `server.host`    | string | `0.0.0.0`      | Bind address                                         |
 | `server.port`    | int    | `8100`         | Port to listen on                                    |
-| `backend`        | string | `qwenimage21`  | Default backend used when `model` is not specified   |
+| `backend`        | string | Required       | Explicit default backend used when `model` is not specified |
+
+Startup fails if `backend` is missing, null, blank, or not a string. There is no implicit backend fallback.
 
 Generated images are stored in an OS-managed temporary directory and deleted immediately after encoding into the response. Per-backend settings under `backends.<id>` (e.g. `max_output_size`, `steps`, `gguf`) are passed to the backend at load time and with every request; request parameters (`size`, `quality`) override them.

@@ -89,6 +89,10 @@ DEFAULT_CFG = 2.0
 
 
 class qwenimage21(MediaBackend):
+    model_id = "qwenimage21"
+    default_steps = DEFAULT_STEPS
+    remaster_extra_steps = REMASTER_EXTRA_STEPS
+
     def __init__(self, backend_config: dict = {}):
         super().__init__(backend_config)
 
@@ -97,6 +101,10 @@ class qwenimage21(MediaBackend):
         # Base model repo (text encoder + VAE + tokenizer). Can be a local
         # directory for offline servers — see docs/QWENIMAGE21.md.
         base_model = self.backend_config.get("base_model", BASE_MODEL)
+        # Optional custom VAE (HF repo id or local directory), e.g.
+        # madebyollin/texture-fix-vae-for-qwen-image-2.1. Replaces the VAE
+        # from the base repo when set.
+        vae = self.backend_config.get("vae")
 
         # from_single_file requires a valid URL (or local file path). Normalize
         # a bare "repo_id/file.gguf" into a full HuggingFace resolve URL.
@@ -140,6 +148,17 @@ class qwenimage21(MediaBackend):
             )
 
         self.pipe = QwenImage21Pipeline.from_pretrained(base_model, **pipe_kwargs)
+
+        # Optional custom VAE — replace the one from the base repo (e.g.
+        # madebyollin/texture-fix-vae-for-qwen-image-2.1 for cleaner textures
+        # and no fp16 NaNs).
+        if vae:
+            from diffusers import AutoencoderKLQwenImage21
+
+            self.pipe.vae = AutoencoderKLQwenImage21.from_pretrained(
+                vae, torch_dtype=torch.bfloat16
+            )
+            print(f"Loaded custom VAE from {vae}")
 
         # Optional LoRA adapters (see docs/QWENIMAGE21.md). Loaded once at
         # startup, switchable per request via config["lora"] /
@@ -254,6 +273,9 @@ class qwenimage21(MediaBackend):
         self.pipe.set_adapters([self.loras[name]["adapter"]], [use_scale])
         return name, use_scale
 
+    def _sampling_kwargs(self, config: dict) -> dict:
+        return {}
+
     def execute(
         self,
         prompt: str,
@@ -261,14 +283,16 @@ class qwenimage21(MediaBackend):
         batch_id=None,
         media=[],
     ) -> tuple[str, str]:
-        steps = config.get("steps", DEFAULT_STEPS)
+        steps = config.get("steps", self.default_steps)
         has_image = len(media) > 0
 
         # Output path
         if batch_id is not None:
-            output_file = f"/tmp/ircawp_generated/qwenimage21.{batch_id}.png"
+            output_file = f"/tmp/ircawp_generated/{self.model_id}.{batch_id}.png"
         else:
-            output_file = config.get("output_file", DEFAULT_FILENAME)
+            output_file = config.get(
+                "output_file", f"/tmp/ircawp_generated/{self.model_id}.png"
+            )
 
         scale_result = config.get("scale", 1.0)
         do_remaster = config.get("remaster", False)
@@ -307,7 +331,7 @@ class qwenimage21(MediaBackend):
             final_prompt = (
                 """Enhance this image while faithfully preserving its original style, medium, composition, colors, and subject. Increase sharpness, clarity, and fine detail. Remove blur, noise, grain, compression artifacts, and haze. Restore crisp edges and clean lines. Keep the existing art style exactly as it is — do not change the medium, do not add photorealism, do not alter the pose, anatomy, proportions, or any text. The result should look like a cleaner, higher-fidelity version of the same image.. {}"""
             ).format(final_prompt)
-            steps += REMASTER_EXTRA_STEPS
+            steps += self.remaster_extra_steps
 
         # LoRA selection: config["lora"] names a configured adapter ("none"
         # disables); defaults to the first configured LoRA.
@@ -354,6 +378,7 @@ class qwenimage21(MediaBackend):
         if true_cfg_scale is not None:
             pipeline_kwargs["negative_prompt"] = ""
             pipeline_kwargs["true_cfg_scale"] = true_cfg_scale
+        pipeline_kwargs.update(self._sampling_kwargs(config))
 
         output_image = self.pipe(
             **pipeline_kwargs,
@@ -364,7 +389,7 @@ class qwenimage21(MediaBackend):
             output_file,
             final_prompt,
             seed=seed,
-            model="qwenimage21",
+            model=self.model_id,
             lora=lora_name if lora_name is not None else "none",
             lora_scale=lora_scale,
             inference_steps=steps,
