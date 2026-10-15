@@ -49,6 +49,10 @@ backends:
         #     - path: "/path/to/your-lora.safetensors"
         #       name: "my-lora"
         #       scale: 0.8
+    flux3klein:
+        max_output_size: 1024
+        gguf: "models/flux3_image_klein_sd_Q5_K_M.gguf"
+        base_model: "black-forest-labs/flux-3-image-klein"
     flux2klein:
         max_output_size: 1024
     hyper_sdxl:
