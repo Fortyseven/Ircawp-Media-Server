@@ -29,11 +29,15 @@ function imageRequestBody(params) {
         outputSize,
         aspectRatio,
         trueCfgScale,
+        resizeInputImages,
         ...rest
     } = params;
     const body = clean(rest);
     if (outputSize !== undefined) body.output_size = outputSize;
     if (trueCfgScale !== undefined) body.true_cfg_scale = trueCfgScale;
+    if (resizeInputImages !== undefined) {
+        body.resize_input_images = resizeInputImages;
+    }
     if (images !== undefined) {
         body.images = images.map((url) => ({ image_url: url }));
     }

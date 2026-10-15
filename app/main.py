@@ -21,6 +21,7 @@ import shutil
 import tempfile
 import time
 from contextlib import asynccontextmanager
+from io import BytesIO
 from pathlib import Path
 from threading import Event
 from typing import Optional
@@ -29,6 +30,7 @@ import yaml
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from PIL import Image as PILImage
 from rich.console import Console
 
 from app.backends.MediaBackend import GenerationCancelled
@@ -331,6 +333,27 @@ def _input_max_edge(media_paths: list[str]) -> Optional[int]:
         edge = round(longest / 16) * 16
         return min(4096, max(256, edge))
     return None
+
+
+def _write_input_image(
+    image_bytes: bytes,
+    temp_path: Path,
+    *,
+    resize: bool,
+    max_input_edge: int,
+) -> None:
+    """Write input bytes, proportionally downsizing oversized images when enabled."""
+    if not resize:
+        temp_path.write_bytes(image_bytes)
+        return
+
+    with PILImage.open(BytesIO(image_bytes)) as image:
+        if max(image.size) <= max_input_edge:
+            temp_path.write_bytes(image_bytes)
+            return
+
+        image.thumbnail((max_input_edge, max_input_edge), PILImage.Resampling.LANCZOS)
+        image.save(temp_path, format=image.format)
 
 
 def _decode_image_url(image_url: str) -> bytes:
@@ -672,13 +695,29 @@ async def images_edits(req: ImageEditRequest) -> ImagesResponse:
     temp_dir = Path(tempfile.mkdtemp())
     temp_media_paths = []
     try:
+        try:
+            backend = get_backend(backend_id)
+        except HTTPException:
+            raise
+        except Exception as e:
+            console.log(f"[red]Backend '{backend_id}' failed to load: {e}")
+            raise HTTPException(status_code=500, detail=f"Backend load failed: {e}")
+
+        backend_config = CONFIG.get("backends", {}).get(backend_id, {})
+        max_input_edge = backend_config.get("max_input_edge", 1440)
+
         for img_ref in req.images:
             if not img_ref.image_url:
                 continue
 
             image_bytes = _decode_image_url(img_ref.image_url)
             temp_path = temp_dir / f"input_{len(temp_media_paths)}.png"
-            temp_path.write_bytes(image_bytes)
+            _write_input_image(
+                image_bytes,
+                temp_path,
+                resize=req.resize_input_images,
+                max_input_edge=max_input_edge,
+            )
             temp_media_paths.append(str(temp_path))
 
         if not temp_media_paths:
@@ -690,14 +729,6 @@ async def images_edits(req: ImageEditRequest) -> ImagesResponse:
         output_size = req.output_size
         if output_size is None:
             output_size = _input_max_edge(temp_media_paths)
-
-        try:
-            backend = get_backend(backend_id)
-        except HTTPException:
-            raise
-        except Exception as e:
-            console.log(f"[red]Backend '{backend_id}' failed to load: {e}")
-            raise HTTPException(status_code=500, detail=f"Backend load failed: {e}")
 
         results = []
 

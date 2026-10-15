@@ -108,6 +108,10 @@ class ImageEditRequest(BaseModel):
         ..., min_length=1, description="Input image(s) to edit."
     )
     model: Optional[str] = Field(None, description="Backend/model to use.")
+    resize_input_images: bool = Field(
+        True,
+        description="Downsize input images to the selected backend's maximum edge.",
+    )
     steps: Optional[InferenceSteps] = Field(
         None, description="Number of inference steps (1-100)."
     )

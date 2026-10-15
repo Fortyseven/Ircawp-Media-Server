@@ -30,6 +30,8 @@ llm:
 backends:
     qwenimage21turbo:
         max_output_size: 1024
+        # Largest edge accepted for source images during editing.
+        max_input_edge: 1440
         steps: 8
         gguf: "models/qwen_image_2.1_turbo_Q4_K_S.gguf"
         base_model: "Qwen/Qwen-Image-2.1-Turbo"
@@ -38,6 +40,7 @@ backends:
         # vae: "madebyollin/texture-fix-vae-for-qwen-image-2.1"
     qwenimage21:
         max_output_size: 1024
+        max_input_edge: 1440
         steps: 25
         gguf: "models/qwen_image_2.1_F16.gguf"
         text_encoder_4bit: true
@@ -51,15 +54,21 @@ backends:
         #       scale: 0.8
     flux3klein:
         max_output_size: 1024
+        max_input_edge: 1440
         gguf: "models/flux3_image_klein_sd_Q5_K_M.gguf"
         base_model: "black-forest-labs/flux-3-image-klein"
     flux2klein:
         max_output_size: 1024
+        max_input_edge: 1440
     hyper_sdxl:
         max_output_size: 1024
+        max_input_edge: 1440
     sd15:
         max_output_size: 512
+        max_input_edge: 1440
     sdxs:
         max_output_size: 512
+        max_input_edge: 1440
     zimageturbo:
         max_output_size: 1280
+        max_input_edge: 1440

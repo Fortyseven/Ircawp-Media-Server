@@ -44,8 +44,7 @@
     // form mounts when such a draft is present.
     const initialImages = Array.isArray(initialDraft.images)
         ? initialDraft.images.filter(
-              (i) =>
-                  i && typeof i === "object" && typeof i.binId === "string",
+              (i) => i && typeof i === "object" && typeof i.binId === "string",
           )
         : [];
 
@@ -74,6 +73,9 @@
     let steps = $state(initialDraftSettings.steps ?? undefined);
     let images = $state(initialImages);
     let rewritePrompt = $state(initialDraftSettings.rewritePrompt ?? false);
+    let resizeInputImages = $state(
+        initialDraftSettings.resizeInputImages ?? true,
+    );
     // "prompt from images" button: in-flight state and its error note.
     let prompting = $state(false);
     let promptNote = $state("");
@@ -123,6 +125,7 @@
                 n,
                 steps,
                 rewritePrompt,
+                resizeInputImages,
                 templateName,
             },
         });
@@ -213,6 +216,7 @@
             // Resolve tray pointers to data URLs at the API edge.
             images: resolve(images.map((i) => i.binId)),
             rewritePrompt,
+            resizeInputImages,
         });
     }
 
@@ -278,7 +282,7 @@
         <textarea
             bind:value={prompt}
             rows="4"
-            placeholder="a lighthouse in a storm, oil painting…"
+            placeholder="Place prompt here..."
             disabled={generating || prompting}
         ></textarea>
         {#if activeTemplate}
@@ -311,7 +315,15 @@
                 bind:checked={rewritePrompt}
                 disabled={generating}
             />
-            <span>rewrite prompt before generating</span>
+            <span>rewrite prompt</span>
+        </label>
+        <label class="rewrite-toggle">
+            <input
+                type="checkbox"
+                bind:checked={resizeInputImages}
+                disabled={generating}
+            />
+            <span>resize media</span>
         </label>
         {#if images.length > 0}
             <button
