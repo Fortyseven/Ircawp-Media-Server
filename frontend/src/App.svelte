@@ -169,6 +169,10 @@
         promptFormRef?.setPrompt(prompt);
     }
 
+    function handleUseSeed(seed) {
+        promptFormRef?.setSeed(seed);
+    }
+
     // Clear the init-timeout note once the bin recovers (e.g. after the
     // user closes the blocking tab and hits retry in the bin panel).
     $effect(() => {
@@ -301,6 +305,7 @@
             ondelete={handleDelete}
             onclear={handleClear}
             onuseprompt={handleUsePrompt}
+            onuseseed={handleUseSeed}
             oncopytobin={handleCopyToBin}
         />
     </main>

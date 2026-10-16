@@ -1211,7 +1211,7 @@ input[type="number"]:disabled {
 
 .frame:hover .frame-useprompt,
 .frame:focus-within .frame-useprompt,
-.frame-menu:has(.frame-menu-list) .frame-useprompt {
+.frame-useprompt.open {
   opacity: 1;
 }
 
@@ -1221,9 +1221,8 @@ input[type="number"]:disabled {
 }
 
 .frame-menu-list {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
+  position: fixed;
+  z-index: 20;
   min-width: 8rem;
   display: flex;
   flex-direction: column;
@@ -1246,9 +1245,14 @@ input[type="number"]:disabled {
   cursor: pointer;
 }
 
-.frame-menu-list button:hover {
+.frame-menu-list button:hover:not(:disabled) {
   background: var(--amber-dim);
   color: var(--amber-bright);
+}
+
+.frame-menu-list button:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
 }
 
 /* ── ultrawide (≥1440px) ──────────────────────────────────────

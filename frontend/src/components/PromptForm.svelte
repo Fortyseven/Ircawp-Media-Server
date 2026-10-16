@@ -236,8 +236,14 @@
         }
     }
 
+    // Matches the seed input's max so any generated seed can be re-entered.
+    function randomSeed() {
+        return crypto.getRandomValues(new Uint32Array(1))[0];
+    }
+
     function submit() {
         if (!canSubmit) return;
+        const hasSeed = seed != null && seed !== "";
         ongenerate({
             prompt: finalPrompt,
             model: model || undefined,
@@ -249,7 +255,7 @@
             // Empty input (field cleared) means "model default".
             trueCfgScale:
                 supportsCfg && trueCfgScale !== "" ? trueCfgScale : undefined,
-            seed: supportsSeed && seed !== "" ? seed : undefined,
+            seed: supportsSeed ? (hasSeed ? seed : randomSeed()) : undefined,
             n,
             steps,
             // Resolve tray pointers to data URLs at the API edge.
@@ -261,6 +267,10 @@
 
     export function setPrompt(text) {
         prompt = text;
+    }
+
+    export function setSeed(value) {
+        seed = value;
     }
 
     export function addBinIds(ids) {
