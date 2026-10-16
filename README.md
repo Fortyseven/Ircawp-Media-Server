@@ -37,22 +37,22 @@ Both endpoints return the same `ImagesResponse`:
 
 ```json
 {
-  "created": 1717689600,
-  "data": [
-    {
-      "b64_json": "iVBORw0KGgoAAAANS...",
-      "revised_prompt": "..."
-    }
-  ]
+    "created": 1717689600,
+    "data": [
+        {
+            "b64_json": "iVBORw0KGgoAAAANS...",
+            "revised_prompt": "..."
+        }
+    ]
 }
 ```
 
-| Field            | Type     | Description                                        |
-|------------------|----------|----------------------------------------------------|
-| `created`        | int      | Unix timestamp (seconds) when the response was created |
-| `data`           | array    | List of generated images                           |
-| `data[].b64_json`| string   | Base64-encoded image data                          |
-| `data[].revised_prompt` | string | Revised prompt used (optional, backend-dependent) |
+| Field                   | Type   | Description                                            |
+| ----------------------- | ------ | ------------------------------------------------------ |
+| `created`               | int    | Unix timestamp (seconds) when the response was created |
+| `data`                  | array  | List of generated images                               |
+| `data[].b64_json`       | string | Base64-encoded image data                              |
+| `data[].revised_prompt` | string | Revised prompt used (optional, backend-dependent)      |
 
 ## Backends
 
@@ -100,11 +100,11 @@ backends:
         text_encoder_4bit: true
 ```
 
-| Key              | Type   | Default        | Description                                          |
-|------------------|--------|----------------|------------------------------------------------------|
-| `server.host`    | string | `0.0.0.0`      | Bind address                                         |
-| `server.port`    | int    | `8100`         | Port to listen on                                    |
-| `backend`        | string | Required       | Explicit default backend used when `model` is not specified |
+| Key           | Type   | Default   | Description                                                 |
+| ------------- | ------ | --------- | ----------------------------------------------------------- |
+| `server.host` | string | `0.0.0.0` | Bind address                                                |
+| `server.port` | int    | `8100`    | Port to listen on                                           |
+| `backend`     | string | Required  | Explicit default backend used when `model` is not specified |
 
 Startup fails if `backend` is missing, null, blank, or not a string. There is no implicit backend fallback.
 

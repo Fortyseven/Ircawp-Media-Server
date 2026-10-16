@@ -103,10 +103,10 @@
                     }}
                 >
                     <img
-                        src={src}
+                        {src}
                         alt="editing image {i + 1}"
                     />
-                    <ImageSizeCaption src={src} />
+                    <ImageSizeCaption {src} />
                     <button
                         type="button"
                         class="thumb-del"
