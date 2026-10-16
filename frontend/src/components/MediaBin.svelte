@@ -107,7 +107,7 @@
                     src={entry.dataUrl}
                     label={entry.mime.split("/").pop()}
                     showLabel={false}
-                    title="drag into editing images"
+                    title="drag into editing images, or onto the prompt to describe it"
                     draggable
                     ondragstart={(e) => {
                         e.dataTransfer.setData(

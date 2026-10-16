@@ -246,6 +246,11 @@ input[type="number"]:focus {
   border-color: var(--amber);
 }
 
+textarea.drop-target {
+  border-color: var(--amber);
+  background: var(--amber-dim);
+}
+
 textarea:disabled,
 select:disabled,
 input[type="number"]:disabled {

@@ -5,6 +5,7 @@
         getEntries,
         has,
         isReady,
+        readImageFiles,
         resolve,
         setTrayIds,
     } from "../lib/media-bin.svelte.js";
@@ -76,9 +77,13 @@
     let resizeInputImages = $state(
         initialDraftSettings.resizeInputImages ?? true,
     );
-    // "prompt from images" button: in-flight state and its error note.
+    // Prompt-from-images (image dropped on the prompt box): in-flight state
+    // and its error note.
     let prompting = $state(false);
     let promptNote = $state("");
+    let promptDragging = $state(false);
+
+    const BIN_TYPE = "application/x-ircawp-bin";
 
     const aspectRatioGroups = $derived(getAspectRatioGroups(images.length > 0));
     // Per-model knobs, advertised by the server via /backends. Unknown
@@ -98,7 +103,9 @@
     const finalPrompt = $derived(
         activeTemplate ? applyTemplate(activeTemplate, prompt) : prompt.trim(),
     );
-    const canSubmit = $derived(!generating && finalPrompt.trim() !== "");
+    const canSubmit = $derived(
+        !generating && !prompting && finalPrompt.trim() !== "",
+    );
 
     $effect(() => {
         const hasImages = images.length > 0;
@@ -177,16 +184,48 @@
         return () => clearTimeout(t);
     });
 
-    // Run inference on the attached images (server-side LLM proxy) and
-    // replace the prompt box with whatever comes back.
-    async function handlePromptFromImages() {
-        if (prompting || generating || !images.length) return;
+    // dragover can't read payloads, only their types.
+    function isImageDrag(event) {
+        const types = event.dataTransfer?.types;
+        return !!types && (types.includes(BIN_TYPE) || types.includes("Files"));
+    }
+
+    // Images dropped on the prompt box (from the media bin or the OS) are
+    // described by the LLM and the result replaces the prompt. They are not
+    // added to the editing queue.
+    function handlePromptDrop(event) {
+        if (!isImageDrag(event)) return;
+        event.preventDefault();
+        promptDragging = false;
+        if (prompting || generating) return;
+
+        // DataTransfer is only readable synchronously during the event.
+        const raw = event.dataTransfer.getData(BIN_TYPE);
+        const files = [...(event.dataTransfer.files ?? [])];
+        if (raw) {
+            let ids = [];
+            try {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed)) ids = parsed;
+            } catch {
+                // malformed payload: nothing to resolve
+            }
+            runPromptFromImages(async () => resolve(ids));
+        } else if (files.length) {
+            runPromptFromImages(() => readImageFiles(files));
+        }
+    }
+
+    async function runPromptFromImages(loadImages) {
         promptNote = "";
         prompting = true;
         try {
-            const generated = await promptFromImages({
-                images: resolve(images.map((i) => i.binId)),
-            });
+            const dataUrls = await loadImages();
+            if (!dataUrls.length) {
+                promptNote = "prompt from images failed: no usable images";
+                return;
+            }
+            const generated = await promptFromImages({ images: dataUrls });
             prompt = generated;
         } catch (e) {
             if (e.name !== "AbortError") {
@@ -280,10 +319,21 @@
     <label class="field">
         <span class="label mono">prompt</span>
         <textarea
+            class:drop-target={promptDragging}
             bind:value={prompt}
             rows="4"
-            placeholder="Place prompt here..."
+            placeholder={prompting
+                ? "describing image…"
+                : "Place prompt here... (drop an image to generate a prompt from it)"}
             disabled={generating || prompting}
+            ondragover={(e) => {
+                if (isImageDrag(e)) {
+                    e.preventDefault();
+                    promptDragging = true;
+                }
+            }}
+            ondragleave={() => (promptDragging = false)}
+            ondrop={handlePromptDrop}
         ></textarea>
         {#if activeTemplate}
             <p
@@ -300,7 +350,13 @@
         type="submit"
         disabled={!canSubmit}
     >
-        {generating ? "developing…" : images.length ? "edit" : "generate"}
+        {generating
+            ? "developing…"
+            : prompting
+              ? "Describing..."
+              : images.length
+                ? "edit"
+                : "generate"}
     </button>
 
     <EditingImages
@@ -325,17 +381,6 @@
             />
             <span>resize media</span>
         </label>
-        {#if images.length > 0}
-            <button
-                class="config-button"
-                type="button"
-                title="Run inference on the attached images and replace the prompt"
-                disabled={generating || prompting}
-                onclick={handlePromptFromImages}
-            >
-                {prompting ? "working…" : "prompt from images"}
-            </button>
-        {/if}
     </div>
 
     {#if promptNote}

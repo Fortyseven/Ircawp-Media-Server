@@ -34,10 +34,7 @@ function contentHash(b64) {
         hi ^= c;
         hi = Math.imul(hi, 0x01000193) >>> 0;
     }
-    return (
-        lo.toString(16).padStart(8, "0") +
-        hi.toString(16).padStart(8, "0")
-    );
+    return lo.toString(16).padStart(8, "0") + hi.toString(16).padStart(8, "0");
 }
 
 function mimeFromDataUrl(dataUrl) {
@@ -90,7 +87,6 @@ export function isReady() {
     return ready;
 }
 
-
 export function getEntries() {
     return entries;
 }
@@ -140,12 +136,17 @@ function readFile(file) {
     });
 }
 
-// Ingest dropped/pasted/browsed files (image types only).
-export async function addFiles(files) {
+// Read image files (other types skipped) to data URLs without binning them.
+export async function readImageFiles(files) {
     const imageFiles = [...files].filter((file) =>
         file.type.startsWith("image/"),
     );
-    const loaded = (await Promise.all(imageFiles.map(readFile))).filter(Boolean);
+    return (await Promise.all(imageFiles.map(readFile))).filter(Boolean);
+}
+
+// Ingest dropped/pasted/browsed files (image types only).
+export async function addFiles(files) {
+    const loaded = await readImageFiles(files);
     for (const dataUrl of loaded) addDataUrl(dataUrl);
     return loaded.length;
 }
