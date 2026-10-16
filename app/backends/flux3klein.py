@@ -165,32 +165,33 @@ class flux3klein(MediaBackend):
                 width = round(max_output_size * aspect / 16) * 16
                 height = max_output_size
         final_prompt = prompt.strip()
+        steps = config.get("steps") or DEFAULT_STEPS
         self.raise_if_cancelled(config)
         progress_state = config.get("progress_state")
         if progress_state is not None:
             progress_state["step"] = 0
-            progress_state["total_steps"] = DEFAULT_STEPS
+            progress_state["total_steps"] = steps
 
         with self._inference_lock, self._report_denoising_progress(config):
             output_image = self.pipe(
                 prompt=final_prompt,
                 width=width,
                 height=height,
-                num_inference_steps=DEFAULT_STEPS,
+                num_inference_steps=steps,
                 generator=torch.Generator("cpu").manual_seed(seed),
                 image=images if images else None,
                 output="images",
             )[0]
         self.raise_if_cancelled(config)
         if progress_state is not None:
-            progress_state["step"] = DEFAULT_STEPS
+            progress_state["step"] = steps
         self._save_image_with_metadata(
             output_image,
             output_file,
             final_prompt,
             seed=seed,
             model="flux3klein",
-            inference_steps=DEFAULT_STEPS,
+            inference_steps=steps,
             width=width,
             height=height,
         )
