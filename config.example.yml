@@ -52,6 +52,12 @@ backends:
         #     - path: "/path/to/your-lora.safetensors"
         #       name: "my-lora"
         #       scale: 0.8
+    mossimage:
+        max_output_size: 1024
+        steps: 50
+        gguf: "models/moss_image_sft_Q4_K_S.gguf"
+        base_model: "OpenMOSS-Team/MOSS-Image-SFT"
+        text_encoder_4bit: true
     flux3klein:
         max_output_size: 1024
         max_input_edge: 1440

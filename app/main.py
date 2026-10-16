@@ -224,6 +224,7 @@ BACKEND_CAPABILITIES = {
         "cfg_experimental": True,
         "seed": True,
     },
+    "mossimage": {"cfg": "guidance_scale", "seed": True},
     "flux3klein": {"seed": True},
     "flux2klein": {"cfg": "guidance_scale", "seed": True},
     "sd15": {"cfg": "guidance_scale", "seed": True},
