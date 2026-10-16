@@ -119,7 +119,7 @@ class Flux3KleinIntegrationTests(unittest.TestCase):
         )
         self.pipeline.load_components.assert_called_once_with(dtype=unittest.mock.ANY)
 
-    def test_generation_uses_sixteen_steps_without_cfg_and_preserves_request_config(
+    def test_generation_uses_requested_steps_without_cfg_and_preserves_request_config(
         self,
     ):
         backend = self.backend()
@@ -131,7 +131,7 @@ class Flux3KleinIntegrationTests(unittest.TestCase):
         self.assertEqual(output_path, str(self.output))
         self.assertEqual(prompt, "a precise illustration")
         kwargs = self.pipeline.call_args.kwargs
-        self.assertEqual(kwargs["num_inference_steps"], 16)
+        self.assertEqual(kwargs["num_inference_steps"], 2)
         self.assertNotIn("guidance_scale", kwargs)
         self.assertEqual((kwargs["width"], kwargs["height"]), (96, 64))
         self.assertEqual(kwargs["generator"].device.type, "cpu")
@@ -141,7 +141,7 @@ class Flux3KleinIntegrationTests(unittest.TestCase):
             self.assertEqual(saved.size, (96, 64))
             self.assertEqual(saved.info["model"], "flux3klein")
             self.assertEqual(saved.info["seed"], "123456")
-            self.assertEqual(saved.info["inference_steps"], "16")
+            self.assertEqual(saved.info["inference_steps"], "2")
             self.assertEqual(saved.info["width"], "96")
             self.assertEqual(saved.info["height"], "64")
             self.assertEqual(saved.info["prompt"], prompt)

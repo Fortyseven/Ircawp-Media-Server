@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
+import numpy as np
 from PIL import Image
 
 from app.backends.MediaBackend import GenerationCancelled
@@ -99,8 +100,14 @@ class QwenImage21TurboIntegrationTests(unittest.TestCase):
         self.assertEqual(output_path, str(self.output))
         self.assertEqual(backend.last_imagegen_prompt, prompt.strip())
         kwargs = self.pipeline.call_args.kwargs
+        steps = config.get("steps") or 16
+        if steps != len(sigmas):
+            sigmas = np.interp(
+                np.linspace(0, 1, steps), np.linspace(0, 1, len(sigmas)), sigmas
+            ).tolist()
         self.assertEqual(list(kwargs["sigmas"]), sigmas)
-        self.assertEqual(kwargs["num_inference_steps"], 8)
+        self.assertEqual(len(kwargs["sigmas"]), steps)
+        self.assertEqual(kwargs["num_inference_steps"], steps)
         self.assertIs(kwargs["use_kv_cache"], True)
         self.assertEqual(kwargs["true_cfg_scale"], config.get("true_cfg_scale", 1.0))
         self.assertEqual((kwargs["width"], kwargs["height"]), (96, 64))
@@ -108,7 +115,7 @@ class QwenImage21TurboIntegrationTests(unittest.TestCase):
         with Image.open(output_path) as saved:
             self.assertEqual(saved.size, (96, 64))
             self.assertEqual(saved.info["model"], "qwenimage21turbo")
-            self.assertEqual(saved.info["inference_steps"], "8")
+            self.assertEqual(saved.info["inference_steps"], str(steps))
             self.assertEqual(saved.info["seed"], str(config["seed"]))
             self.assertEqual(saved.info["width"], "96")
             self.assertEqual(saved.info["height"], "64")
@@ -200,29 +207,32 @@ class QwenImage21TurboIntegrationTests(unittest.TestCase):
         self.assert_turbo_result(backend, self.request(), sigmas=local_sigmas)
         self.config_loader.assert_not_called()
 
-    def test_generation_saves_eight_step_metadata_and_reports_eight_steps(self):
+    def test_generation_saves_default_step_metadata_and_reports_default_steps(self):
         progress = {}
         kwargs, prompt = self.assert_turbo_result(
             self.turbo(), self.request(progress_state=progress)
         )
         self.assertIsNone(kwargs["image"])
         self.assertEqual(prompt, "a precise illustration")
-        self.assertEqual(progress, {"step": 8, "total_steps": 8})
+        self.assertEqual(progress, {"step": 16, "total_steps": 16})
 
-    def test_caller_steps_and_remaster_do_not_change_sampling_or_metadata(self):
+    def test_caller_steps_resample_schedule_and_remaster_adds_no_steps(self):
         backend = self.turbo()
-        for overrides in (
-            {"steps": 40},
-            {"steps": 1},
-            {"remaster": True},
-            {"steps": 40, "remaster": True},
+        for overrides, expected_steps in (
+            ({"steps": 40}, 40),
+            ({"steps": 8}, 8),
+            ({"steps": 1}, 1),
+            ({"remaster": True}, 16),
+            ({"steps": 12, "remaster": True}, 12),
         ):
             with self.subTest(overrides=overrides):
                 progress = {}
                 _, prompt = self.assert_turbo_result(
                     backend, self.request(progress_state=progress, **overrides)
                 )
-                self.assertEqual(progress, {"step": 8, "total_steps": 8})
+                self.assertEqual(
+                    progress, {"step": expected_steps, "total_steps": expected_steps}
+                )
                 if overrides.get("remaster"):
                     self.assertIn("Enhance this image", prompt)
 
@@ -273,7 +283,7 @@ class QwenImage21TurboIntegrationTests(unittest.TestCase):
                     progress_state=progress,
                 ),
             )
-        self.assertEqual(progress, {"step": 1, "total_steps": 8})
+        self.assertEqual(progress, {"step": 1, "total_steps": 40})
         self.assertFalse(self.output.exists())
 
     def test_missing_or_invalid_schedule_fails_clearly_without_sampling(self):
