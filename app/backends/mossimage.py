@@ -168,13 +168,16 @@ class mossimage(MediaBackend):
         )
 
         self.pipe = module.MOSSImagePipeline(
-            transformer=transformer,
+            transformer=self._prepare_transformer(transformer),
             scheduler=scheduler,
             text_encoder=text_encoder,
             tokenizer=tokenizer,
             vae=vae,
         )
         self.pipe.enable_model_cpu_offload()
+
+    def _prepare_transformer(self, transformer):
+        return transformer
 
     @staticmethod
     def _parse_aspect(config: dict) -> float:
@@ -190,16 +193,11 @@ class mossimage(MediaBackend):
                 return DEFAULT_ASPECT
         return float(aspect) if isinstance(aspect, (int, float)) else DEFAULT_ASPECT
 
-    def execute(
-        self,
-        prompt: str,
-        config: dict = {},
-        batch_id=None,
-        media=[],
-    ) -> tuple[str, str]:
+    def _plan_request(self, config: dict, batch_id, media) -> tuple[str, int, int, int]:
+        """Return (output_file, seed, width, height) for a text-to-image request."""
         if media:
             raise ValueError(
-                "mossimage is text-to-image only; image editing is not supported"
+                f"{self.model_id} is text-to-image only; image editing is not supported"
             )
 
         if batch_id is not None:
@@ -224,6 +222,16 @@ class mossimage(MediaBackend):
                 width, height = int(max_output_size * aspect), max_output_size
             width = round(width / 16) * 16
             height = round(height / 16) * 16
+        return output_file, seed, width, height
+
+    def execute(
+        self,
+        prompt: str,
+        config: dict = {},
+        batch_id=None,
+        media=[],
+    ) -> tuple[str, str]:
+        output_file, seed, width, height = self._plan_request(config, batch_id, media)
 
         final_prompt = prompt.strip()
         requested_steps = config.get("steps") or DEFAULT_STEPS

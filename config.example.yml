@@ -58,6 +58,13 @@ backends:
         gguf: "models/moss_image_sft_Q4_K_S.gguf"
         base_model: "OpenMOSS-Team/MOSS-Image-SFT"
         text_encoder_4bit: true
+    mossimage8:
+        max_output_size: 1024
+        steps: 8
+        gguf: "models/moss_image_sft_Q4_K_S.gguf"
+        base_model: "OpenMOSS-Team/MOSS-Image-SFT"
+        adapter: "lodestones/MOSS-Image-SFT-8-steps-dmd"
+        text_encoder_4bit: true
     flux3klein:
         max_output_size: 1024
         max_input_edge: 1440

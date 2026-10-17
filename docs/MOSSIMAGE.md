@@ -94,3 +94,56 @@ Not verified: offline operation, Q4_K_S versus F16 or BF16 quality comparison,
 `flash-linear-attention` speedup, layout (JSON) prompts, concurrent use with other
 loaded backends. The first run downloaded ~27 GB in roughly seven minutes; that
 is not a load benchmark.
+
+## 8-Step Distillation (`mossimage8`)
+
+[lodestones/MOSS-Image-SFT-8-steps-dmd](https://huggingface.co/lodestones/MOSS-Image-SFT-8-steps-dmd)
+is a work-in-progress data-space DMD distillation of MOSS-Image-SFT (8 forwards,
+no CFG, Apache-2.0, trained on compact-JSON scene-graph captions). It reuses the
+same Q4_K_S GGUF, text encoder and VAE as `mossimage`.
+
+The distillation delta is smaller than bf16 resolution, so the 20 GB fp32
+checkpoint cannot be merged or quantized. The backend instead applies the
+adapter files unmerged (about 1.25 GB, downloaded on first use):
+
+- `lora.safetensors`: rank-128 fp32 LoRA on `proj.{q,k,v,o,ffn_up_gate,ffn_down}`
+  of all 42 layers, added next to each quantized layer (`alpha / rank` scale).
+- `time_embedding.safetensors`: fp32 `time_embedding.*` plus the
+  `shared_block_modulation` and `video_head_modulation` biases. These modules
+  replace the quantized ones and run in fp32. The two modulation weights are
+  the Q4_K_S weights dequantized to fp32 (not the original bf16).
+- `dataspace.safetensors`: latent-mix matrix `Q` and eight learned step codes.
+
+Sampling replaces the pipeline loop: with fixed noise `z` and `x0 = 0`, each step
+runs `x = z + Q x0`, one transformer forward with the step code as timestep, then
+`x0 = z - v`; the final `x0` is decoded by the pipeline's VAE path. Steps run the
+first N codes (N <= 8; larger requests are clamped and metadata reports the actual
+count). No CFG, so the capability list advertises only seed.
+
+```yaml
+backends:
+    mossimage8:
+        max_output_size: 1024
+        steps: 8
+        gguf: "models/moss_image_sft_Q4_K_S.gguf"
+        base_model: "OpenMOSS-Team/MOSS-Image-SFT"
+        adapter: "lodestones/MOSS-Image-SFT-8-steps-dmd"   # repo id or local dir
+        text_encoder_4bit: true
+```
+
+### Local GPU Smoke Test (2026-10-16)
+
+RTX 4090, 1024 x 1024, Q4_K_S base plus adapters, 6.3 GB peak allocated, load
+about 12 s (cached):
+
+| Steps | Time | Notes |
+| --- | --- | --- |
+| 8 | 10.4 to 12.7 s | Coherent; "DAILY FOX" legible, sticky-note text garbled |
+| 4 | 6.9 to 9.7 s | Coherent; sticky note partly legible |
+| 2 | 5.4 to 5.8 s | Fox watercolor still sharp and coherent |
+
+Plain-English prompts work despite the JSON training captions. Compared with
+50-step `mossimage`, small handwritten text is less reliable. Not verified:
+quality against the unquantized fp32 model or bf16 base plus LoRA, whether the
+fp32 modulation weights from the original checkpoint would improve results,
+JSON-caption prompts, offline use, and the HTTP API for this backend.

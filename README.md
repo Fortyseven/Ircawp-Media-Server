@@ -61,6 +61,7 @@ Available backends (set via `model` field or `config.yml`):
 - `qwenimage21` (default) — Qwen-Image-2.1, GGUF 4-bit transformer + 4-bit text encoder, max 1024px (see [docs/QWENIMAGE21.md](docs/QWENIMAGE21.md))
 - `qwenimage21turbo` — Qwen-Image-2.1-Turbo, local Q4_K_S GGUF, eight-step sampling (see [docs/QWENIMAGE21-TURBO.md](docs/QWENIMAGE21-TURBO.md))
 - `mossimage` — MOSS-Image-SFT (text-to-image only), local Q4_K_S GGUF + 4-bit text encoder, 50 steps, CFG 3 (see [docs/MOSSIMAGE.md](docs/MOSSIMAGE.md))
+- `mossimage8` — MOSS-Image-SFT 8-step DMD distillation (same Q4_K_S GGUF plus unmerged LoRA), up to 8 steps, no CFG (see [docs/MOSSIMAGE.md](docs/MOSSIMAGE.md))
 - `flux3klein` — FLUX.3 Klein, local Q5_K_M GGUF transformer, fixed 16-step distilled sampling, max 1024px
 - `flux2klein` — max 1024px
 - `hyper_sdxl` — max 1024px
