@@ -188,10 +188,45 @@ class qwenimage21(MediaBackend):
             print(f"Default LoRA active: {self.default_lora!r}")
 
         self.pipe.enable_model_cpu_offload()
-        # VAE decode of a full-res latent in one pass spikes memory after the last
-        # step; tiling keeps that final decode within budget.
-        # NOTE: This is commented out because it causes strange visual artifacts.
-        # self.pipe.vae.enable_tiling()
+
+    def _decode_latents(self, latents, width: int, height: int):
+        """Decode packed latents untiled (tiling leaves purple streaks).
+
+        Falls back to large, widely overlapping tiles only if the whole frame
+        does not fit in VRAM (e.g. 2048x2048 on a 24 GB card).
+        """
+        pipe = self.pipe
+        torch.cuda.empty_cache()
+        device = pipe._execution_device
+        vae = pipe.vae.to(device)
+        latents = pipe._unpack_latents(latents, height, width, pipe.vae_scale_factor)
+        latents = latents.to(device=device, dtype=vae.dtype)
+        stats_shape = (1, vae.config.z_dim, 1, 1, 1)
+        mean = torch.tensor(vae.config.latents_mean).view(stats_shape).to(latents)
+        std = torch.tensor(vae.config.latents_std).view(stats_shape).to(latents)
+        latents = latents * std + mean
+
+        def decode():
+            with torch.no_grad():
+                image = vae.decode(latents, return_dict=False)[0][:, :, 0]
+            return pipe.image_processor.postprocess(image, output_type="pil")[0]
+
+        try:
+            try:
+                return decode()
+            except torch.OutOfMemoryError:
+                print(f"VAE decode of {width}x{height} ran out of memory; using tiles")
+            vae.clear_cache()
+            torch.cuda.empty_cache()
+            # 1024px tiles with 256px blends: the defaults (256/192) are tiny.
+            vae.enable_tiling(1024, 1024, 768, 768)
+            try:
+                return decode()
+            finally:
+                vae.use_tiling = False
+        finally:
+            vae.to("cpu")
+            torch.cuda.empty_cache()
 
     def _parse_aspect(self, config: dict) -> float:
         """Parse aspect ratio from config."""
@@ -382,9 +417,10 @@ class qwenimage21(MediaBackend):
         pipeline_kwargs.update(self._sampling_kwargs(config))
         scheduler = self._apply_scheduler(config, seed)
 
-        output_image = self.pipe(
-            **pipeline_kwargs,
-        ).images[0]
+        # Latents come back so the VAE decode runs separately and untiled.
+        latents = self.pipe(output_type="latent", **pipeline_kwargs).images
+        self.raise_if_cancelled(config)
+        output_image = self._decode_latents(latents, width, height)
 
         self._save_image_with_metadata(
             output_image,

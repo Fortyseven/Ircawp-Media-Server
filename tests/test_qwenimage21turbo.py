@@ -42,6 +42,10 @@ class QwenImage21TurboIntegrationTests(unittest.TestCase):
         # Deliberately no sigmas on the constructed pipeline's config.
         self.pipeline.config = {}
         self.pipeline.side_effect = self.render
+        self.decode_calls = []
+        self.enterContext(
+            patch.object(qwenimage21, "_decode_latents", autospec=True)
+        ).side_effect = lambda _self, *args: self.decode(*args)
         self.transformer_loader = self.enterContext(
             patch("diffusers.QwenImage21Transformer2DModel.from_single_file")
         )
@@ -69,6 +73,10 @@ class QwenImage21TurboIntegrationTests(unittest.TestCase):
         return SimpleNamespace(
             images=[Image.new("RGB", (kwargs["width"], kwargs["height"]), "teal")]
         )
+
+    def decode(self, latents, width, height):
+        self.decode_calls.append((width, height))
+        return latents[0]
 
     def turbo_class(self):
         module = importlib.import_module("app.backends.qwenimage21turbo")
@@ -112,6 +120,8 @@ class QwenImage21TurboIntegrationTests(unittest.TestCase):
         self.assertEqual(kwargs["true_cfg_scale"], config.get("true_cfg_scale", 1.0))
         self.assertEqual((kwargs["width"], kwargs["height"]), (96, 64))
         self.assertEqual(kwargs["generator"].initial_seed(), config["seed"])
+        self.assertEqual(kwargs["output_type"], "latent")
+        self.assertEqual(self.decode_calls[-1], (96, 64))
         with Image.open(output_path) as saved:
             self.assertEqual(saved.size, (96, 64))
             self.assertEqual(saved.info["model"], "qwenimage21turbo")

@@ -33,6 +33,9 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image as PILImage
 from rich.console import Console
 
+# Must be set before torch initializes CUDA; large VAE decodes fragment the allocator.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 from app.backends.MediaBackend import GenerationCancelled
 from app.backends.schedulers import scheduler_names
 from app.models import (
