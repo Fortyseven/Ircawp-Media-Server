@@ -232,6 +232,7 @@ BACKEND_CAPABILITIES = {
     "sdxs": {"cfg": "guidance_scale", "seed": True},
     "hyper_sdxl": {"cfg": "guidance_scale", "cfg_experimental": True, "seed": True},
     "zimageturbo": {"cfg": "guidance_scale", "cfg_experimental": True, "seed": True},
+    "ming_design": {"cfg": "guidance_scale", "cfg_experimental": True, "seed": True},
 }
 
 

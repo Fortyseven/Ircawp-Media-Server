@@ -65,6 +65,12 @@ backends:
         base_model: "OpenMOSS-Team/MOSS-Image-SFT"
         adapter: "lodestones/MOSS-Image-SFT-8-steps-dmd"
         text_encoder_4bit: true
+    ming_design:
+        max_output_size: 1024
+        steps: 12
+        encoder_gguf: "models/ming-image/Text Encoders (UPDATED)/Ming-Image-0.1-Ling-Mini-2.0-Q4_K_M.gguf"
+        dit_gguf: "models/ming-image/Ming-Image-0.1-Design-Q4_K_M.gguf"
+        base_dir: "models/ming-image/official"
     flux3klein:
         max_output_size: 1024
         max_input_edge: 1440
