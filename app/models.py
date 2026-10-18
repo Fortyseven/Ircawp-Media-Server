@@ -82,6 +82,11 @@ class ImageGenerationRequest(BaseModel):
         ge=0.0,
         description="Optional LoRA scale; overrides the adapter's configured scale.",
     )
+    scheduler: Optional[str] = Field(
+        None,
+        description="Optional scheduler name (see /backends capabilities). "
+        "'default' or omitted uses the model's own.",
+    )
     response_format: Optional[Literal["url", "b64_json"]] = Field(
         None, description="Response format. We always return b64_json."
     )
@@ -158,6 +163,11 @@ class ImageEditRequest(BaseModel):
         None,
         ge=0.0,
         description="Optional LoRA scale; overrides the adapter's configured scale.",
+    )
+    scheduler: Optional[str] = Field(
+        None,
+        description="Optional scheduler name (see /backends capabilities). "
+        "'default' or omitted uses the model's own.",
     )
     input_fidelity: Optional[Literal["high", "low"]] = Field(
         None, description="Fidelity to original input."

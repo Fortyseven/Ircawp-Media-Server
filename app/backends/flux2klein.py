@@ -20,6 +20,8 @@ CFG_SCALE = 4
 
 
 class flux2klein(MediaBackend):
+    scheduler_family = "flow"
+
     def __init__(self, backend_config: dict = {}):
         super().__init__(backend_config)
         self.pipe = Flux2KleinPipeline.from_pretrained(
@@ -122,6 +124,8 @@ class flux2klein(MediaBackend):
         else:
             aspect = self._parse_aspect(config)
 
+        scheduler = self._apply_scheduler(config, seed)
+
         # Generate
         output_image = self.pipe(
             prompt=final_prompt,
@@ -141,6 +145,7 @@ class flux2klein(MediaBackend):
             seed=seed,
             model="flux2klein",
             guidance_scale=guidance,
+            scheduler=scheduler,
             inference_steps=steps,
             width=width,
             height=height,

@@ -90,6 +90,7 @@ DEFAULT_CFG = 2.0
 
 class qwenimage21(MediaBackend):
     model_id = "qwenimage21"
+    scheduler_family = "flow"
     default_steps = DEFAULT_STEPS
     remaster_extra_steps = REMASTER_EXTRA_STEPS
 
@@ -379,6 +380,7 @@ class qwenimage21(MediaBackend):
             pipeline_kwargs["negative_prompt"] = ""
             pipeline_kwargs["true_cfg_scale"] = true_cfg_scale
         pipeline_kwargs.update(self._sampling_kwargs(config))
+        scheduler = self._apply_scheduler(config, seed)
 
         output_image = self.pipe(
             **pipeline_kwargs,
@@ -392,6 +394,7 @@ class qwenimage21(MediaBackend):
             model=self.model_id,
             lora=lora_name if lora_name is not None else "none",
             lora_scale=lora_scale,
+            scheduler=scheduler,
             inference_steps=steps,
             width=width,
             height=height,

@@ -24,6 +24,7 @@
         const lines = [item.prompt];
         if (item.trueCfgScale != null) lines.push(`CFG: ${item.trueCfgScale}`);
         if (item.seed != null) lines.push(`Seed: ${item.seed}`);
+        if (item.scheduler) lines.push(`Scheduler: ${item.scheduler}`);
         return lines.join("\n");
     }
 

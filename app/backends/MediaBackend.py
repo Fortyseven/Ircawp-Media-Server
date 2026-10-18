@@ -12,9 +12,41 @@ class GenerationCancelled(Exception):
 
 
 class MediaBackend:
+    # Family key into schedulers.FAMILIES; None means no per-request scheduler.
+    scheduler_family: str | None = None
+    _default_scheduler = None
+
     def __init__(self, backend_config: dict = {}):
         self.backend_config = backend_config
         self.last_imagegen_prompt = None
+
+    def _apply_scheduler(self, config: dict, seed: int | None = None) -> str | None:
+        """Install the scheduler requested in config["scheduler"] on self.pipe.
+
+        Returns the name applied, or None when the pipeline's own default is used.
+        """
+        name = config.get("scheduler")
+        if not name or name == "default":
+            if self._default_scheduler is not None:
+                self.pipe.scheduler = self._default_scheduler
+            return None
+        if self.scheduler_family is None:
+            return None
+
+        from .schedulers import build_scheduler
+
+        if self._default_scheduler is None:
+            self._default_scheduler = self.pipe.scheduler
+        self.pipe.scheduler = build_scheduler(
+            self.scheduler_family, name, self._default_scheduler.config
+        )
+        if self.scheduler_family == "flow" and seed is not None:
+            import torch
+
+            # Flow pipelines don't pass a generator to scheduler.step, so its
+            # re-noising draws from the global RNG.
+            torch.manual_seed(seed)
+        return name
 
     def execute(
         self, prompt: str, config: dict = {}, batch_id=None, media=[]

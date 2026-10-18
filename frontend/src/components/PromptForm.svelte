@@ -67,6 +67,7 @@
     // Empty field ("default" placeholder) means the model's own tuned default.
     let trueCfgScale = $state(initialDraftSettings.trueCfgScale ?? undefined);
     let seed = $state(initialDraftSettings.seed ?? undefined);
+    let scheduler = $state(initialDraftSettings.scheduler ?? "");
     let hadImages = initialImages.length > 0;
     let unloading = $state(false);
     let unloadNote = $state("");
@@ -92,6 +93,11 @@
     const supportsCfg = $derived(activeCaps.cfg === true);
     const cfgExperimental = $derived(activeCaps.cfg_experimental === true);
     const supportsSeed = $derived(activeCaps.seed === true);
+    const schedulerOptions = $derived(activeCaps.schedulers ?? []);
+    // A stale pick (model switched, or option removed) falls back to default.
+    const activeScheduler = $derived(
+        schedulerOptions.includes(scheduler) ? scheduler : "",
+    );
 
     // Dropdown display order: name-sorted, independent of storage order.
     const sorted = $derived(sortedTemplates(templates));
@@ -129,6 +135,7 @@
                 outputSize,
                 trueCfgScale,
                 seed,
+                scheduler,
                 n,
                 steps,
                 rewritePrompt,
@@ -256,6 +263,7 @@
             trueCfgScale:
                 supportsCfg && trueCfgScale !== "" ? trueCfgScale : undefined,
             seed: supportsSeed ? (hasSeed ? seed : randomSeed()) : undefined,
+            scheduler: activeScheduler || undefined,
             n,
             steps,
             // Resolve tray pointers to data URLs at the API edge.
@@ -514,6 +522,21 @@
                     placeholder="random"
                     disabled={generating}
                 />
+            </label>
+        {/if}
+
+        {#if schedulerOptions.length > 0}
+            <label class="field">
+                <span class="label mono">scheduler</span>
+                <select
+                    bind:value={scheduler}
+                    disabled={generating}
+                >
+                    <option value="">default</option>
+                    {#each schedulerOptions as option}
+                        <option value={option}>{option}</option>
+                    {/each}
+                </select>
             </label>
         {/if}
     </div>

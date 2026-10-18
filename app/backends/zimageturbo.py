@@ -20,6 +20,8 @@ MODEL = "Tongyi-MAI/Z-Image-Turbo"
 
 
 class zimageturbo(MediaBackend):
+    scheduler_family = "flow"
+
     def __init__(self, backend_config: dict = {}):
         super().__init__(backend_config)
         self.pipe = ZImagePipeline.from_pretrained(
@@ -89,6 +91,8 @@ class zimageturbo(MediaBackend):
         prompt = prompt.strip()
         final_prompt = prompt
 
+        scheduler = self._apply_scheduler(config, seed)
+
         image = self.pipe(
             prompt=final_prompt,
             width=width,
@@ -106,6 +110,7 @@ class zimageturbo(MediaBackend):
             seed=seed,
             model="zimageturbo",
             guidance_scale=guidance,
+            scheduler=scheduler,
             inference_steps=steps,
             width=width,
             height=height,

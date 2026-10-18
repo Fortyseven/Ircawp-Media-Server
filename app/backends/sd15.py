@@ -14,6 +14,8 @@ DEFAULT_FILENAME = "/tmp/ircawp_generated/sd15.png"
 
 
 class sd15(MediaBackend):
+    scheduler_family = "sd"
+
     def __init__(self, backend_config: dict = {}):
         super().__init__(backend_config)
         self.repo = "/models/stable-diffusion/custom/2023-04/526mixV15_v15.safetensors"
@@ -42,6 +44,7 @@ class sd15(MediaBackend):
             seed = random.randint(0, 100000)
         steps = config.get("steps", 25)
         guidance = config.get("guidance_scale", 7)
+        scheduler = self._apply_scheduler(config, seed)
         image = self.pipe(
             prompt=prompt,
             num_inference_steps=steps,
@@ -57,6 +60,7 @@ class sd15(MediaBackend):
             seed=seed,
             model="sd15",
             guidance_scale=guidance,
+            scheduler=scheduler,
             inference_steps=steps,
             width=image.width,
             height=image.height,

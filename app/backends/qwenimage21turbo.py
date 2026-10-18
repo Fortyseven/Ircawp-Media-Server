@@ -20,6 +20,8 @@ DEFAULT_STEPS = 16
 
 class qwenimage21turbo(qwenimage21):
     model_id = "qwenimage21turbo"
+    # Distilled on an explicit eight-step sigma schedule.
+    scheduler_family = None
     remaster_extra_steps = 0
 
     def __init__(self, backend_config: dict = {}):

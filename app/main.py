@@ -34,6 +34,7 @@ from PIL import Image as PILImage
 from rich.console import Console
 
 from app.backends.MediaBackend import GenerationCancelled
+from app.backends.schedulers import scheduler_names
 from app.models import (
     Image,
     ImageEditRequest,
@@ -218,7 +219,7 @@ def _image_to_response(image_path: str, final_prompt: str | None = None) -> Imag
 # pipeline accepts guidance but was never trained with it; `seed` honors a
 # deterministic generation seed.
 BACKEND_CAPABILITIES = {
-    "qwenimage21": {"cfg": "true_cfg_scale", "seed": True},
+    "qwenimage21": {"cfg": "true_cfg_scale", "seed": True, "scheduler_family": "flow"},
     "qwenimage21turbo": {
         "cfg": "true_cfg_scale",
         "cfg_experimental": True,
@@ -227,11 +228,20 @@ BACKEND_CAPABILITIES = {
     "mossimage": {"cfg": "guidance_scale", "seed": True},
     "mossimage8": {"seed": True},
     "flux3klein": {"seed": True},
-    "flux2klein": {"cfg": "guidance_scale", "seed": True},
-    "sd15": {"cfg": "guidance_scale", "seed": True},
+    "flux2klein": {
+        "cfg": "guidance_scale",
+        "seed": True,
+        "scheduler_family": "flow",
+    },
+    "sd15": {"cfg": "guidance_scale", "seed": True, "scheduler_family": "sd"},
     "sdxs": {"cfg": "guidance_scale", "seed": True},
     "hyper_sdxl": {"cfg": "guidance_scale", "cfg_experimental": True, "seed": True},
-    "zimageturbo": {"cfg": "guidance_scale", "cfg_experimental": True, "seed": True},
+    "zimageturbo": {
+        "cfg": "guidance_scale",
+        "cfg_experimental": True,
+        "seed": True,
+        "scheduler_family": "flow",
+    },
     "ming_design": {"cfg": "guidance_scale", "cfg_experimental": True, "seed": True},
 }
 
@@ -243,14 +253,17 @@ def _backend_capabilities(backend_id: str) -> dict:
         "cfg": "cfg" in caps,
         "cfg_experimental": caps.get("cfg_experimental", False),
         "seed": caps.get("seed", False),
+        "schedulers": scheduler_names(caps.get("scheduler_family")),
     }
 
 
 def _request_extra(req) -> dict:
-    """Optional per-request params (steps, lora, lora_scale) for backend config."""
+    """Optional per-request params (steps, lora, lora_scale, scheduler) for backend config."""
     extra: dict = {}
     if req.steps is not None:
         extra["steps"] = req.steps
+    if req.scheduler is not None:
+        extra["scheduler"] = req.scheduler
     if req.lora is not None:
         extra["lora"] = req.lora
     if req.lora_scale is not None:
@@ -295,6 +308,19 @@ def _build_backend_config(
     if seed is not None and caps.get("seed"):
         config["seed"] = seed
 
+    scheduler = config.get("scheduler")
+    if scheduler is not None:
+        family = caps.get("scheduler_family")
+        if family is None:
+            config.pop("scheduler")
+        elif scheduler != "default" and scheduler not in scheduler_names(family):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Unknown scheduler '{scheduler}' for {backend_id} "
+                    f"(available: default, {', '.join(scheduler_names(family))})"
+                ),
+            )
     # Parse size into width/height if provided
     parsed = parse_size(size)
     if parsed:

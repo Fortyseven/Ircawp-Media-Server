@@ -133,6 +133,7 @@
                 aspectRatio: params.aspectRatio,
                 trueCfgScale: params.trueCfgScale,
                 seed: params.seed,
+                scheduler: params.scheduler,
                 n: params.n,
                 steps: params.steps,
                 sourceImage: params.images[0] ?? null,
