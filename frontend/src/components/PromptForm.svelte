@@ -351,8 +351,7 @@
                 }
             }}
             ondragleave={() => (promptDragging = false)}
-            ondrop={handlePromptDrop}
-        ></textarea>
+            ondrop={handlePromptDrop}></textarea>
         {#if activeTemplate}
             <p
                 class="final-prompt mono"
@@ -404,8 +403,10 @@
     {#if promptNote}
         <span
             class="hint mono error-note"
-            role="alert">{promptNote}</span
+            role="alert"
         >
+            {promptNote}
+        </span>
     {/if}
 
     <div class="row">
@@ -554,3 +555,142 @@
         onclose={() => (showTemplatesDialog = false)}
     />
 {/if}
+
+<style lang="scss">
+    .form {
+        display: flex;
+        flex-direction: column;
+        gap: 0.9rem;
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+            &.grow {
+                flex: 1;
+            }
+            &.small {
+                flex: 0 0 4rem;
+            }
+            label {
+                font-size: 0.68rem;
+                letter-spacing: 0.14em;
+                text-transform: uppercase;
+                color: var(--muted);
+            }
+        }
+        textarea,
+        select,
+        input[type="number"] {
+            font-family: var(--font-display);
+            font-size: 0.92rem;
+            color: var(--text);
+            background: var(--bg-deep);
+            border: 1px solid var(--border);
+            border-radius: 7px;
+            padding: 0.55rem 0.7rem;
+            transition: border-color 0.15s;
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 90px;
+        }
+
+        textarea:focus,
+        select:focus,
+        input[type="number"]:focus {
+            outline: none;
+            border-color: var(--amber);
+        }
+
+        textarea.drop-target {
+            border-color: var(--amber);
+            background: var(--amber-dim);
+        }
+
+        textarea:disabled,
+        select:disabled,
+        input[type="number"]:disabled {
+            opacity: 0.5;
+        }
+        /* --------------------------- */
+
+        .cta {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            letter-spacing: 0.1em;
+            text-transform: lowercase;
+            color: var(--bg-deep);
+            background: var(--amber);
+            border: none;
+            border-radius: 8px;
+            padding: 0.75rem;
+            cursor: pointer;
+            transition:
+                background 0.15s,
+                transform 0.1s;
+
+            &:hover:not(:disabled) {
+                background: var(--amber-bright);
+            }
+
+            &:active:not(:disabled) {
+                transform: translateY(1px);
+            }
+
+            &:disabled {
+                background: var(--border);
+                color: var(--muted);
+                cursor: not-allowed;
+            }
+        }
+
+        /* --------------------------- */
+
+        .model-pick {
+            display: flex;
+            gap: 0.45rem;
+            align-items: center;
+
+            select {
+                flex: 1;
+            }
+        }
+
+        /* --------------------------- */
+
+        .rewrite-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+        }
+
+        .rewrite-toggle {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--muted);
+            font-size: 0.8rem;
+            cursor: pointer;
+
+            &:has(input:disabled) {
+                cursor: not-allowed;
+                opacity: 0.5;
+            }
+
+            input {
+                accent-color: var(--amber);
+            }
+        }
+
+        /* --------------------------- */
+
+        .upload {
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+        }
+    }
+</style>
