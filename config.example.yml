@@ -71,6 +71,22 @@ backends:
         encoder_gguf: "models/ming-image/Text Encoders (UPDATED)/Ming-Image-0.1-Ling-Mini-2.0-Q4_K_M.gguf"
         dit_gguf: "models/ming-image/Ming-Image-0.1-Design-Q4_K_M.gguf"
         base_dir: "models/ming-image/official"
+    # Fibo 2.0 (Bria): gated official weights, transformer quantized to 4-bit on load.
+    # Accept the license on huggingface.co for each repo before first load.
+    fibo2:
+        max_output_size: 1024
+        max_input_edge: 1440
+        steps: 30
+        base_model: "briaai/Fibo-2.0-dev"
+        transformer_4bit: true
+        text_encoder_4bit: false
+    # Edit-only, fixed four steps, no CFG.
+    fibo2editturbo:
+        max_output_size: 1024
+        max_input_edge: 1440
+        base_model: "briaai/Fibo-2.0-edit-turbo"
+        transformer_4bit: true
+        text_encoder_4bit: false
     flux3klein:
         max_output_size: 1024
         max_input_edge: 1440

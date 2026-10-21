@@ -64,6 +64,8 @@ Available backends (set via `model` field or `config.yml`):
 - `mossimage8` — MOSS-Image-SFT 8-step DMD distillation (same Q4_K_S GGUF plus unmerged LoRA), up to 8 steps, no CFG (see [docs/MOSSIMAGE.md](docs/MOSSIMAGE.md))
 - `ming_design` — Ming-Image-0.1-Design (text-to-image and single-image editing; RGBA/transparent output, strong text rendering), local Q4_K_M GGUFs, 12 steps, CFG 1.0; needs `just ming-setup` (see [docs/MING-IMAGE-DESIGN.md](docs/MING-IMAGE-DESIGN.md))
 - `flux3klein` — FLUX.3 Klein, local Q5_K_M GGUF transformer, fixed 16-step distilled sampling, max 1024px
+- `fibo2` — Fibo 2.0 Dev (Bria; text-to-image and up to 5-image editing), gated official weights with on-load 4-bit transformer, 30 steps, CFG 5, non-commercial license (see [docs/FIBO2.md](docs/FIBO2.md))
+- `fibo2editturbo` — Fibo 2.0 Edit Turbo, edit-only, fixed 4 steps, no CFG (see [docs/FIBO2.md](docs/FIBO2.md))
 - `flux2klein` — max 1024px
 - `hyper_sdxl` — max 1024px
 - `sd15` — max 512px

@@ -93,6 +93,8 @@
     const supportsCfg = $derived(activeCaps.cfg === true);
     const cfgExperimental = $derived(activeCaps.cfg_experimental === true);
     const supportsSeed = $derived(activeCaps.seed === true);
+    // Shown unless the backend fixes its step count.
+    const supportsSteps = $derived(activeCaps.steps !== false);
     const schedulerOptions = $derived(activeCaps.schedulers ?? []);
     // A stale pick (model switched, or option removed) falls back to default.
     const activeScheduler = $derived(
@@ -265,7 +267,7 @@
             seed: supportsSeed ? (hasSeed ? seed : randomSeed()) : undefined,
             scheduler: activeScheduler || undefined,
             n,
-            steps,
+            steps: supportsSteps ? steps : undefined,
             // Resolve tray pointers to data URLs at the API edge.
             images: resolve(images.map((i) => i.binId)),
             rewritePrompt,
@@ -480,16 +482,18 @@
             />
         </label>
 
-        <label class="field">
-            <span class="label mono">steps</span>
-            <input
-                type="number"
-                bind:value={steps}
-                min="1"
-                max="100"
-                disabled={generating}
-            />
-        </label>
+        {#if supportsSteps}
+            <label class="field">
+                <span class="label mono">steps</span>
+                <input
+                    type="number"
+                    bind:value={steps}
+                    min="1"
+                    max="100"
+                    disabled={generating}
+                />
+            </label>
+        {/if}
 
         {#if supportsCfg}
             <label class="field small">

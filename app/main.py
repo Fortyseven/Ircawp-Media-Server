@@ -220,7 +220,8 @@ def _image_to_response(image_path: str, final_prompt: str | None = None) -> Imag
 # config key the request's true_cfg_scale is forwarded as (absent: the model
 # has no guidance knob); `cfg_experimental` marks CFG-free distillations whose
 # pipeline accepts guidance but was never trained with it; `seed` honors a
-# deterministic generation seed.
+# deterministic generation seed; `steps` (default True) is False where the step
+# count is fixed by the model, hiding the client's steps control.
 BACKEND_CAPABILITIES = {
     "qwenimage21": {"cfg": "true_cfg_scale", "seed": True, "scheduler_family": "flow"},
     "qwenimage21turbo": {
@@ -246,6 +247,8 @@ BACKEND_CAPABILITIES = {
         "scheduler_family": "flow",
     },
     "ming_design": {"cfg": "guidance_scale", "cfg_experimental": True, "seed": True},
+    "fibo2": {"cfg": "guidance_scale", "seed": True},
+    "fibo2editturbo": {"seed": True, "steps": False},
 }
 
 
@@ -256,6 +259,7 @@ def _backend_capabilities(backend_id: str) -> dict:
         "cfg": "cfg" in caps,
         "cfg_experimental": caps.get("cfg_experimental", False),
         "seed": caps.get("seed", False),
+        "steps": caps.get("steps", True),
         "schedulers": scheduler_names(caps.get("scheduler_family")),
     }
 
