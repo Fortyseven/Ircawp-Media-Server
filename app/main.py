@@ -221,13 +221,21 @@ def _image_to_response(image_path: str, final_prompt: str | None = None) -> Imag
 # has no guidance knob); `cfg_experimental` marks CFG-free distillations whose
 # pipeline accepts guidance but was never trained with it; `seed` honors a
 # deterministic generation seed; `steps` (default True) is False where the step
-# count is fixed by the model, hiding the client's steps control.
+# count is fixed by the model, hiding the client's steps control;
+# `negative_prompt` marks pipelines that accept a negative prompt.
 BACKEND_CAPABILITIES = {
-    "qwenimage21": {"cfg": "true_cfg_scale", "seed": True, "scheduler_family": "flow"},
+    "qwenimage21": {
+        "cfg": "true_cfg_scale",
+        "seed": True,
+        "scheduler_family": "flow",
+        "negative_prompt": True,
+    },
     "qwenimage21turbo": {
         "cfg": "true_cfg_scale",
+        "negative_prompt": True,
         "cfg_experimental": True,
         "seed": True,
+        "steps": False,
     },
     "mossimage": {"cfg": "guidance_scale", "seed": True},
     "mossimage8": {"seed": True},
@@ -237,17 +245,28 @@ BACKEND_CAPABILITIES = {
         "seed": True,
         "scheduler_family": "flow",
     },
-    "sd15": {"cfg": "guidance_scale", "seed": True, "scheduler_family": "sd"},
-    "sdxs": {"cfg": "guidance_scale", "seed": True},
-    "hyper_sdxl": {"cfg": "guidance_scale", "cfg_experimental": True, "seed": True},
+    "sd15": {
+        "cfg": "guidance_scale",
+        "seed": True,
+        "scheduler_family": "sd",
+        "negative_prompt": True,
+    },
+    "sdxs": {"cfg": "guidance_scale", "seed": True, "negative_prompt": True},
+    "hyper_sdxl": {
+        "cfg": "guidance_scale",
+        "cfg_experimental": True,
+        "seed": True,
+        "negative_prompt": True,
+    },
     "zimageturbo": {
         "cfg": "guidance_scale",
+        "negative_prompt": True,
         "cfg_experimental": True,
         "seed": True,
         "scheduler_family": "flow",
     },
     "ming_design": {"cfg": "guidance_scale", "cfg_experimental": True, "seed": True},
-    "fibo2": {"cfg": "guidance_scale", "seed": True},
+    "fibo2": {"cfg": "guidance_scale", "seed": True, "negative_prompt": True},
     "fibo2editturbo": {"seed": True, "steps": False},
 }
 
@@ -260,6 +279,7 @@ def _backend_capabilities(backend_id: str) -> dict:
         "cfg_experimental": caps.get("cfg_experimental", False),
         "seed": caps.get("seed", False),
         "steps": caps.get("steps", True),
+        "negative_prompt": caps.get("negative_prompt", False),
         "schedulers": scheduler_names(caps.get("scheduler_family")),
     }
 
@@ -271,6 +291,8 @@ def _request_extra(req) -> dict:
         extra["steps"] = req.steps
     if req.scheduler is not None:
         extra["scheduler"] = req.scheduler
+    if req.negative_prompt is not None:
+        extra["negative_prompt"] = req.negative_prompt
     if req.lora is not None:
         extra["lora"] = req.lora
     if req.lora_scale is not None:
@@ -314,6 +336,10 @@ def _build_backend_config(
         config[caps["cfg"]] = true_cfg_scale
     if seed is not None and caps.get("seed"):
         config["seed"] = seed
+
+    negative_prompt = (config.pop("negative_prompt", None) or "").strip()
+    if negative_prompt and caps.get("negative_prompt"):
+        config["negative_prompt"] = negative_prompt
 
     scheduler = config.get("scheduler")
     if scheduler is not None:

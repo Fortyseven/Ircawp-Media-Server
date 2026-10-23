@@ -147,6 +147,40 @@ class ApiTests(unittest.TestCase):
     def test_unsupported_backend_drops_scheduler(self):
         self.assertNotIn("scheduler", self.build("qwenimage21turbo"))
 
+    def build_negative(self, backend_id, negative_prompt):
+        with patch.object(main, "CONFIG", {"backends": {backend_id: {}}}):
+            return main._build_backend_config(
+                backend_id=backend_id,
+                size=None,
+                output_size=None,
+                true_cfg_scale=None,
+                seed=None,
+                quality=None,
+                extra={"negative_prompt": negative_prompt},
+            )
+
+    def test_capabilities_advertise_negative_prompt(self):
+        for backend_id in ("qwenimage21", "sd15", "fibo2"):
+            with self.subTest(backend_id=backend_id):
+                self.assertTrue(
+                    main._backend_capabilities(backend_id)["negative_prompt"]
+                )
+        for backend_id in ("flux3klein", "fibo2editturbo", "unknown"):
+            with self.subTest(backend_id=backend_id):
+                self.assertFalse(
+                    main._backend_capabilities(backend_id)["negative_prompt"]
+                )
+
+    def test_negative_prompt_is_forwarded_stripped(self):
+        config = self.build_negative("sd15", "  blurry  ")
+        self.assertEqual(config["negative_prompt"], "blurry")
+
+    def test_empty_negative_prompt_is_dropped(self):
+        self.assertNotIn("negative_prompt", self.build_negative("sd15", "   "))
+
+    def test_unsupported_backend_drops_negative_prompt(self):
+        self.assertNotIn("negative_prompt", self.build_negative("flux3klein", "blurry"))
+
     def test_declared_families_match_backend_classes(self):
         from app.backends.flux2klein import flux2klein
         from app.backends.qwenimage21 import qwenimage21

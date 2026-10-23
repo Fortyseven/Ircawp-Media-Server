@@ -101,6 +101,12 @@ class MediaBackend:
 
         return callback
 
+    @staticmethod
+    def _negative_prompt_kwargs(config: dict) -> dict:
+        """Pipeline kwargs for the request's negative prompt (empty when unset)."""
+        negative_prompt = config.get("negative_prompt")
+        return {"negative_prompt": negative_prompt} if negative_prompt else {}
+
     def _save_image_with_metadata(
         self,
         image: Image.Image,

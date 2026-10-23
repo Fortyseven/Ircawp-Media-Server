@@ -47,6 +47,7 @@ class sdxs(MediaBackend):
             generator=torch.Generator(device="cpu").manual_seed(seed),
             safety_checker=None,
             callback_on_step_end=self.cancellation_callback(config, steps),
+            **self._negative_prompt_kwargs(config),
         ).images[0]
 
         self._save_image_with_metadata(
@@ -56,6 +57,7 @@ class sdxs(MediaBackend):
             seed=seed,
             model="sdxs",
             guidance_scale=guidance,
+            negative_prompt=config.get("negative_prompt"),
             inference_steps=steps,
             width=image.width,
             height=image.height,

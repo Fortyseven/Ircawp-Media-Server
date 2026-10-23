@@ -101,6 +101,7 @@ class zimageturbo(MediaBackend):
             guidance_scale=guidance,
             generator=torch.Generator("cpu").manual_seed(seed),
             callback_on_step_end=self.cancellation_callback(config, steps),
+            **self._negative_prompt_kwargs(config),
         ).images[0]
 
         self._save_image_with_metadata(
@@ -110,6 +111,7 @@ class zimageturbo(MediaBackend):
             seed=seed,
             model="zimageturbo",
             guidance_scale=guidance,
+            negative_prompt=config.get("negative_prompt"),
             scheduler=scheduler,
             inference_steps=steps,
             width=width,

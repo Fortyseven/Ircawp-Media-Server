@@ -10,6 +10,7 @@
         ondelete,
         onclear,
         onuseprompt,
+        onusenegative,
         onuseseed,
         oncopytobin,
     } = $props();
@@ -22,6 +23,7 @@
 
     function itemTooltip(item) {
         const lines = [item.prompt];
+        if (item.negativePrompt) lines.push(`Negative: ${item.negativePrompt}`);
         if (item.trueCfgScale != null) lines.push(`CFG: ${item.trueCfgScale}`);
         if (item.seed != null) lines.push(`Seed: ${item.seed}`);
         if (item.scheduler) lines.push(`Scheduler: ${item.scheduler}`);
@@ -121,6 +123,20 @@
                 >
                     use prompt
                 </button>
+                {#if openItem.negativePrompt}
+                    <button
+                        type="button"
+                        role="menuitem"
+                        title={openItem.negativePrompt}
+                        onclick={(e) => {
+                            e.stopPropagation();
+                            onusenegative(openItem.negativePrompt);
+                            closeMenu();
+                        }}
+                    >
+                        use negative prompt
+                    </button>
+                {/if}
                 <button
                     type="button"
                     role="menuitem"

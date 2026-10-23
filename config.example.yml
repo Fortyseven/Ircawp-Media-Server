@@ -80,6 +80,8 @@ backends:
         base_model: "briaai/Fibo-2.0-dev"
         transformer_4bit: true
         text_encoder_4bit: false
+        # Regional torch.compile of the transformer blocks (~45% faster t2i).
+        compile_transformer: true
     # Edit-only, fixed four steps, no CFG.
     fibo2editturbo:
         max_output_size: 1024
@@ -87,6 +89,7 @@ backends:
         base_model: "briaai/Fibo-2.0-edit-turbo"
         transformer_4bit: true
         text_encoder_4bit: false
+        compile_transformer: true
     flux3klein:
         max_output_size: 1024
         max_input_edge: 1440

@@ -87,6 +87,12 @@ class ImageGenerationRequest(BaseModel):
         description="Optional scheduler name (see /backends capabilities). "
         "'default' or omitted uses the model's own.",
     )
+    negative_prompt: Optional[str] = Field(
+        None,
+        max_length=32000,
+        description="Optional negative prompt (see /backends capabilities). "
+        "Ignored by backends that don't support one.",
+    )
     response_format: Optional[Literal["url", "b64_json"]] = Field(
         None, description="Response format. We always return b64_json."
     )
@@ -168,6 +174,12 @@ class ImageEditRequest(BaseModel):
         None,
         description="Optional scheduler name (see /backends capabilities). "
         "'default' or omitted uses the model's own.",
+    )
+    negative_prompt: Optional[str] = Field(
+        None,
+        max_length=32000,
+        description="Optional negative prompt (see /backends capabilities). "
+        "Ignored by backends that don't support one.",
     )
     input_fidelity: Optional[Literal["high", "low"]] = Field(
         None, description="Fidelity to original input."

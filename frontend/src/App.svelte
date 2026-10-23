@@ -134,6 +134,7 @@
                 trueCfgScale: params.trueCfgScale,
                 seed: params.seed,
                 scheduler: params.scheduler,
+                negativePrompt: params.negativePrompt,
                 n: params.n,
                 steps: params.steps,
                 sourceImage: params.images[0] ?? null,
@@ -168,6 +169,10 @@
 
     function handleUsePrompt(prompt) {
         promptFormRef?.setPrompt(prompt);
+    }
+
+    function handleUseNegativePrompt(text) {
+        promptFormRef?.setNegativePrompt(text);
     }
 
     function handleUseSeed(seed) {
@@ -306,6 +311,7 @@
             ondelete={handleDelete}
             onclear={handleClear}
             onuseprompt={handleUsePrompt}
+            onusenegative={handleUseNegativePrompt}
             onuseseed={handleUseSeed}
             oncopytobin={handleCopyToBin}
         />

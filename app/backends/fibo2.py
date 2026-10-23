@@ -84,6 +84,13 @@ class fibo2(MediaBackend):
         self.pipe = BriaFibo2Pipeline.from_pretrained(base_model, **pipe_kwargs)
         self.pipe.enable_model_cpu_offload()
 
+        if self.backend_config.get("compile_transformer", True):
+            # Lazy: the compile cost lands on the first request per input shape.
+            try:
+                self.pipe.transformer.compile_repeated_blocks()
+            except Exception as e:
+                print(f"{self.model_id}: transformer compile disabled: {e}")
+
     def _resolve_steps(self, config: dict) -> int:
         return int(config.get("steps") or self.default_steps)
 
@@ -162,6 +169,7 @@ class fibo2(MediaBackend):
             )
 
         final_prompt = prompt.strip()
+        negative_prompt = config.get("negative_prompt")
 
         pipeline_kwargs = {
             "prompt": final_prompt,
@@ -175,7 +183,7 @@ class fibo2(MediaBackend):
         if media_pil:
             pipeline_kwargs["image"] = media_pil
         elif guidance_scale > 1.0:
-            pipeline_kwargs["negative_prompt"] = NEGATIVE_T2I
+            pipeline_kwargs["negative_prompt"] = negative_prompt or NEGATIVE_T2I
 
         output_image = self.pipe(**pipeline_kwargs).images[0]
         self.raise_if_cancelled(config)
@@ -188,6 +196,7 @@ class fibo2(MediaBackend):
             model=self.model_id,
             inference_steps=steps,
             guidance_scale=guidance_scale,
+            negative_prompt=negative_prompt,
             width=output_image.width,
             height=output_image.height,
             aspect_ratio=str(output_image.width / output_image.height),

@@ -412,7 +412,7 @@ class qwenimage21(MediaBackend):
         }
         true_cfg_scale = config.get("true_cfg_scale")
         if true_cfg_scale is not None:
-            pipeline_kwargs["negative_prompt"] = ""
+            pipeline_kwargs["negative_prompt"] = config.get("negative_prompt", "")
             pipeline_kwargs["true_cfg_scale"] = true_cfg_scale
         pipeline_kwargs.update(self._sampling_kwargs(config))
         scheduler = self._apply_scheduler(config, seed)
@@ -430,6 +430,7 @@ class qwenimage21(MediaBackend):
             model=self.model_id,
             lora=lora_name if lora_name is not None else "none",
             lora_scale=lora_scale,
+            negative_prompt=config.get("negative_prompt"),
             scheduler=scheduler,
             inference_steps=steps,
             width=width,

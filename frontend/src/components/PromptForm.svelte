@@ -50,6 +50,12 @@
         : [];
 
     let prompt = $state(initialDraft.prompt ?? "");
+    // The toggle only controls whether the box is shown (and sent); the text
+    // is kept while hidden so re-enabling restores it.
+    let negativePrompt = $state(initialDraftSettings.negativePrompt ?? "");
+    let showNegativePrompt = $state(
+        initialDraftSettings.showNegativePrompt ?? false,
+    );
     let templates = $state(loadTemplates());
     let templateName = $state(initialDraftSettings.templateName ?? "");
     let showTemplatesDialog = $state(false);
@@ -95,6 +101,10 @@
     const supportsSeed = $derived(activeCaps.seed === true);
     // Shown unless the backend fixes its step count.
     const supportsSteps = $derived(activeCaps.steps !== false);
+    const supportsNegativePrompt = $derived(activeCaps.negative_prompt === true);
+    const negativeActive = $derived(
+        supportsNegativePrompt && showNegativePrompt,
+    );
     const schedulerOptions = $derived(activeCaps.schedulers ?? []);
     // A stale pick (model switched, or option removed) falls back to default.
     const activeScheduler = $derived(
@@ -143,6 +153,8 @@
                 rewritePrompt,
                 resizeInputImages,
                 templateName,
+                negativePrompt,
+                showNegativePrompt,
             },
         });
     });
@@ -266,6 +278,10 @@
                 supportsCfg && trueCfgScale !== "" ? trueCfgScale : undefined,
             seed: supportsSeed ? (hasSeed ? seed : randomSeed()) : undefined,
             scheduler: activeScheduler || undefined,
+            negativePrompt:
+                negativeActive && negativePrompt.trim()
+                    ? negativePrompt.trim()
+                    : undefined,
             n,
             steps: supportsSteps ? steps : undefined,
             // Resolve tray pointers to data URLs at the API edge.
@@ -277,6 +293,11 @@
 
     export function setPrompt(text) {
         prompt = text;
+    }
+
+    export function setNegativePrompt(text) {
+        negativePrompt = text;
+        showNegativePrompt = true;
     }
 
     export function setSeed(value) {
@@ -364,6 +385,17 @@
         {/if}
     </label>
 
+    {#if negativeActive}
+        <label class="field">
+            <span class="label mono">negative prompt</span>
+            <textarea
+                bind:value={negativePrompt}
+                rows="2"
+                placeholder="Things to avoid... (only applies when CFG is above 1)"
+                disabled={generating}></textarea>
+        </label>
+    {/if}
+
     <button
         class="cta"
         type="submit"
@@ -392,6 +424,16 @@
             />
             <span>rewrite prompt</span>
         </label>
+        {#if supportsNegativePrompt}
+            <label class="rewrite-toggle">
+                <input
+                    type="checkbox"
+                    bind:checked={showNegativePrompt}
+                    disabled={generating}
+                />
+                <span>negative prompt</span>
+            </label>
+        {/if}
         <label class="rewrite-toggle">
             <input
                 type="checkbox"

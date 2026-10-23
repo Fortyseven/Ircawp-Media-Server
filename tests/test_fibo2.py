@@ -77,6 +77,22 @@ class Fibo2Tests(Fibo2Base):
         self.backend(transformer_4bit=False)
         self.assertNotIn("quantization_config", self.loader.call_args.kwargs)
 
+    def test_transformer_blocks_are_compiled_by_default(self):
+        self.backend()
+        self.pipeline.transformer.compile_repeated_blocks.assert_called_once_with()
+
+    def test_compile_can_be_disabled(self):
+        self.backend(compile_transformer=False)
+        self.pipeline.transformer.compile_repeated_blocks.assert_not_called()
+
+    def test_compile_setup_failure_does_not_break_loading(self):
+        self.pipeline.transformer.compile_repeated_blocks.side_effect = RuntimeError(
+            "no compiler"
+        )
+        backend = self.backend()
+        backend.execute("x", self.request())
+        self.pipeline.assert_called_once()
+
     def test_base_model_is_configurable(self):
         self.backend(base_model="/some/local/dir")
         self.assertEqual(self.loader.call_args.args, ("/some/local/dir",))
@@ -116,6 +132,11 @@ class Fibo2Tests(Fibo2Base):
         kwargs = self.pipeline.call_args.kwargs
         self.assertEqual(kwargs["num_inference_steps"], 12)
         self.assertEqual(kwargs["guidance_scale"], 3.5)
+
+    def test_user_negative_prompt_replaces_default(self):
+        backend = self.backend()
+        backend.execute("x", self.request(negative_prompt="blurry"))
+        self.assertEqual(self.pipeline.call_args.kwargs["negative_prompt"], "blurry")
 
     def test_guidance_one_omits_negative_prompt(self):
         self.backend().execute("x", self.request(guidance_scale=1.0))
@@ -232,7 +253,7 @@ class Fibo2DiscoveryTests(unittest.TestCase):
     def test_capabilities(self):
         self.assertEqual(
             main.BACKEND_CAPABILITIES["fibo2"],
-            {"cfg": "guidance_scale", "seed": True},
+            {"cfg": "guidance_scale", "seed": True, "negative_prompt": True},
         )
         self.assertEqual(
             main.BACKEND_CAPABILITIES["fibo2editturbo"], {"seed": True, "steps": False}

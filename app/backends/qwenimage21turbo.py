@@ -15,7 +15,7 @@ BASE_MODEL = "Qwen/Qwen-Image-2.1-Turbo"
 DEFAULT_GGUF = str(
     Path(__file__).resolve().parents[2] / "models" / "qwen_image_2.1_turbo_Q4_K_S.gguf"
 )
-DEFAULT_STEPS = 16
+DEFAULT_STEPS = 12
 
 
 class qwenimage21turbo(qwenimage21):

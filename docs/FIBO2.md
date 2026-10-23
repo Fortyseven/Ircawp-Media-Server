@@ -41,6 +41,16 @@ resolution-shifted flow schedule). `quality=high` (remaster) is ignored.
 
 ## Measured (2026-10-20, RTX 4090, otherwise idle, 21.7 GiB free)
 
+Numbers below are uncompiled unless stated.
+
+- Regional `torch.compile` (`compile_transformer`, default on), Dev NF4,
+  1024x1024, 30 steps: t2i 55 s -> 30 s warm (42 s cold incl. compile); edit
+  112 s -> 87 s warm (90 s cold). VRAM unchanged. Single runs; other sizes and
+  prompt lengths may recompile. Only setup errors fall back to eager; a failure
+  at first inference is not caught.
+- bf16 transformer (`transformer_4bit: false`) was only ~17% faster for t2i
+  (46 s) and no faster for edits, at +7 GiB peak: not worth it.
+
 - Load 6 s (warm cache), Dev, transformer NF4, text encoder bf16, offload on.
 - 1024x1024, 30 steps, CFG 5: 55 s, peak 8.4 GiB allocated.
 - 1024x1024 edit, 30 steps, CFG 5: 112 s, peak 10.0 GiB. Colour edit

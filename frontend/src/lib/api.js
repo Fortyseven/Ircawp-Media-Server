@@ -29,12 +29,14 @@ function imageRequestBody(params) {
         outputSize,
         aspectRatio,
         trueCfgScale,
+        negativePrompt,
         resizeInputImages,
         ...rest
     } = params;
     const body = clean(rest);
     if (outputSize !== undefined) body.output_size = outputSize;
     if (trueCfgScale !== undefined) body.true_cfg_scale = trueCfgScale;
+    if (negativePrompt !== undefined) body.negative_prompt = negativePrompt;
     if (resizeInputImages !== undefined) {
         body.resize_input_images = resizeInputImages;
     }
