@@ -9,9 +9,11 @@ from types import MethodType
 
 import torch
 from diffusers import (
-    Flux3DistilledModularPipeline,
     Flux3Transformer2DModel,
     GGUFQuantizationConfig,
+)
+from diffusers.modular_pipelines.flux3.modular_blocks_flux3_distilled import (
+    Flux3DistilledAutoBlocks,
 )
 from diffusers.utils import load_image
 
@@ -71,13 +73,16 @@ class flux3klein(MediaBackend):
         transformer = Flux3Transformer2DModel.from_single_file(
             self.backend_config["gguf"],
             config=self.backend_config["base_model"],
+            subfolder="transformer",
             quantization_config=GGUFQuantizationConfig(compute_dtype=torch.bfloat16),
         )
-        self.pipe = Flux3DistilledModularPipeline.from_pretrained(
-            self.backend_config["base_model"],
-            transformer=transformer,
-        )
+        # Newer diffusers prepends a prompt-upsampler step backed by a ~17 GB
+        # Qwen3.5 model; drop it so the prompt is encoded as given (and OOM is avoided).
+        blocks = Flux3DistilledAutoBlocks()
+        blocks.sub_blocks.pop("prompt_upsampler")
+        self.pipe = blocks.init_pipeline(self.backend_config["base_model"])
         self.pipe.load_components(dtype=torch.bfloat16)
+        self.pipe.update_components(transformer=transformer)
         self.pipe.to("cuda" if torch.cuda.is_available() else "cpu")
 
     @staticmethod

@@ -33,7 +33,8 @@ class Flux3KleinIntegrationTests(unittest.TestCase):
         )
         self.pipeline_loader = self.enterContext(
             patch(
-                "diffusers.Flux3DistilledModularPipeline.from_pretrained",
+                "diffusers.modular_pipelines.flux3.modular_blocks_flux3_distilled"
+                ".Flux3DistilledAutoBlocks.init_pipeline",
                 return_value=self.pipeline,
             )
         )
@@ -112,10 +113,12 @@ class Flux3KleinIntegrationTests(unittest.TestCase):
         self.assertEqual(
             self.transformer_loader.call_args.kwargs["config"], str(base_model)
         )
+        self.assertEqual(
+            self.transformer_loader.call_args.kwargs["subfolder"], "transformer"
+        )
         self.assertEqual(self.pipeline_loader.call_args.args[0], str(base_model))
-        self.assertIs(
-            self.pipeline_loader.call_args.kwargs["transformer"],
-            self.transformer_loader.return_value,
+        self.pipeline.update_components.assert_called_once_with(
+            transformer=self.transformer_loader.return_value
         )
         self.pipeline.load_components.assert_called_once_with(dtype=unittest.mock.ANY)
 
