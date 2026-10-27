@@ -509,6 +509,7 @@ body {
 }
 
 .template-editor input[type="text"],
+.template-filter,
 .template-editor textarea {
   width: 100%;
   font-family: var(--font-display);
@@ -546,6 +547,16 @@ body {
   margin: 0;
   font-size: 0.72rem;
   color: var(--danger);
+}
+
+.template-filter {
+  flex-shrink: 0;
+  margin-top: 0.85rem;
+}
+
+.template-filter:focus {
+  outline: none;
+  border-color: var(--amber);
 }
 
 .template-list {

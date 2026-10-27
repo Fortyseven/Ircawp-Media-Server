@@ -123,6 +123,13 @@ export function sortedTemplates(list) {
     );
 }
 
+/** Case-insensitive substring match on template name; blank query keeps all. */
+export function filterTemplates(list, query) {
+    const q = (query ?? "").trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((t) => t.name.toLowerCase().includes(q));
+}
+
 /**
  * Minimal RFC 4180 CSV parser: returns an array of rows (string arrays).
  * Handles quoted fields, doubled embedded quotes, and fields containing

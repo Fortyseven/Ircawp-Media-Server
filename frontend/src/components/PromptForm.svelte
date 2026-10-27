@@ -9,6 +9,7 @@
         resolve,
         setTrayIds,
     } from "../lib/media-bin.svelte.js";
+    import TemplateCombobox from "./TemplateCombobox.svelte";
     import PromptTemplates from "./PromptTemplates.svelte";
     import {
         applyTemplate,
@@ -338,15 +339,11 @@
     <div class="template-pick">
         <label class="field">
             <span class="label mono">template</span>
-            <select
+            <TemplateCombobox
                 bind:value={templateName}
+                templates={sorted}
                 disabled={generating}
-            >
-                <option value="">none</option>
-                {#each sorted as t (t.name)}
-                    <option value={t.name}>{t.name}</option>
-                {/each}
-            </select>
+            />
         </label>
         {#if activeTemplate}
             <button

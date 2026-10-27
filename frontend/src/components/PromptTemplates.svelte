@@ -2,6 +2,7 @@
     import {
         PROMPT_PLACEHOLDER,
         exportTemplatesCsv,
+        filterTemplates,
         importTemplatesCsv,
         loadTemplates,
         resetTemplates,
@@ -15,6 +16,8 @@
     let templates = $state(loadTemplates());
     // Display order: name-sorted, independent of storage order.
     const sorted = $derived(sortedTemplates(templates));
+    let filter = $state("");
+    const visible = $derived(filterTemplates(sorted, filter));
 
     // Editor: add a new template, or edit one (editingName = original name).
     let editingName = $state("");
@@ -215,8 +218,16 @@
             </div>
         </form>
 
+        <input
+            type="search"
+            class="template-filter"
+            bind:value={filter}
+            placeholder="filter templates…"
+            aria-label="Filter templates"
+        />
+
         <div class="template-list">
-            {#each sorted as t (t.name)}
+            {#each visible as t (t.name)}
                 <div class="template-row">
                     <div class="template-info">
                         <span class="name">{t.name}</span>
@@ -236,7 +247,11 @@
                     </div>
                 </div>
             {:else}
-                <p class="empty-note mono">no templates — add one above</p>
+                <p class="empty-note mono">
+                    {filter.trim()
+                        ? "no templates match the filter"
+                        : "no templates — add one above"}
+                </p>
             {/each}
         </div>
 
