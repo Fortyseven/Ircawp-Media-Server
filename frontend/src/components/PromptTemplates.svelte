@@ -9,7 +9,7 @@
         sortedTemplates,
     } from "../lib/prompt-templates.js";
 
-    let { onclose, onchange } = $props();
+    let { onclose, onchange, editName = "" } = $props();
 
     // Dialog is conditionally mounted, so loading once here is always fresh.
     let templates = $state(loadTemplates());
@@ -54,6 +54,10 @@
         body = template.body;
         formError = "";
     }
+
+    // Open straight into editing a given template (from the prompt form).
+    const initial = templates.find((t) => t.name === editName);
+    if (initial) startEdit(initial);
 
     function submit(event) {
         event.preventDefault();

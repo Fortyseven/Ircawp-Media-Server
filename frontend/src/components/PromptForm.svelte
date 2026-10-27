@@ -59,6 +59,7 @@
     let templates = $state(loadTemplates());
     let templateName = $state(initialDraftSettings.templateName ?? "");
     let showTemplatesDialog = $state(false);
+    let editTemplateName = $state("");
     // Drop a stale selection (template deleted since the last draft save).
     if (templateName && !templates.some((t) => t.name === templateName)) {
         templateName = "";
@@ -347,10 +348,26 @@
                 {/each}
             </select>
         </label>
+        {#if activeTemplate}
+            <button
+                class="config-button"
+                type="button"
+                onclick={() => {
+                    editTemplateName = activeTemplate.name;
+                    showTemplatesDialog = true;
+                }}
+                disabled={generating}
+            >
+                edit
+            </button>
+        {/if}
         <button
             class="config-button"
             type="button"
-            onclick={() => (showTemplatesDialog = true)}
+            onclick={() => {
+                editTemplateName = "";
+                showTemplatesDialog = true;
+            }}
             disabled={generating}
         >
             manage
@@ -597,6 +614,7 @@
 
 {#if showTemplatesDialog}
     <PromptTemplates
+        editName={editTemplateName}
         onchange={handleTemplatesChange}
         onclose={() => (showTemplatesDialog = false)}
     />
