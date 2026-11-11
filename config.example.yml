@@ -32,6 +32,12 @@ llm:
     ssl_verify: true
 
 # Backend-specific settings
+#
+# `fast_offload: false` on any backend that offloads to the CPU (qwenimage21*,
+# fibo2*, mossimage*, ming_design, minimaxh3image) restores the stock
+# copy-back offload. The default (true) frees the GPU copy instead of copying
+# it to the CPU; output is bit-identical and requests are faster. See
+# app/backends/cpu_mirror.py.
 backends:
     qwenimage21turbo:
         max_output_size: 1024

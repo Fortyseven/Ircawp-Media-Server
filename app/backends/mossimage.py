@@ -11,6 +11,7 @@ This backend receives a final, ready-to-use prompt.
 """
 
 from .MediaBackend import MediaBackend
+from .cpu_mirror import install_fast_offload
 
 import importlib.util
 import os
@@ -175,6 +176,13 @@ class mossimage(MediaBackend):
             vae=vae,
         )
         self.pipe.enable_model_cpu_offload()
+        # Offload by dropping the GPU copy instead of copying back (cpu_mirror.py);
+        # `fast_offload: false` restores the stock behaviour.
+        self.fast_offload = (
+            install_fast_offload(self.pipe)
+            if self.backend_config.get("fast_offload", True)
+            else None
+        )
 
     def _prepare_transformer(self, transformer):
         return transformer

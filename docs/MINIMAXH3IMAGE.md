@@ -201,7 +201,8 @@ each evicted component back to the CPU, and a GPU-to-CPU copy of that size costs
 | Steps 1-5 and VAE decode | 1.8 s each | 1.8 s each |
 | After the VAE decode (offload, PNG save) | 4.7-7 s | 0.4 s |
 
-`CpuMirror` (`app/backends/minimaxh3image.py`) exploits that the weights never
+`CpuMirror` (now the shared `app/backends/cpu_mirror.py`, also used by the other
+backends; `fast_offload: false` disables it here too) exploits that the weights never
 change: the CPU tensors a component had while parked are kept as masters, and
 "offloading" puts them back, which drops the GPU copy with no transfer. It also
 restores bitsandbytes' `quant_state` tensors, which `Module.to()` moves in place.

@@ -251,20 +251,39 @@ class MingEncoder:
         self.linear_proj = linear_proj
         self.image_tools = image_tools
 
-    def to(self, device):
-        modules = (
-            self.llm,
-            self.connector,
-            self.proj_in,
-            self.proj_out,
-            self.proj_directvlm,
-        )
-        for module in modules + tuple(
-            m for m in (self.vision, self.linear_proj) if m is not None
-        ):
-            module.to(device)
+    # Set by the backend: park on the CPU by dropping the GPU copy instead of
+    # copying back (see cpu_mirror.py). Masters are captured on the first move
+    # off the CPU, when everything is still parked there.
+    fast_offload = False
+    _mirrors = None
+
+    def _parts(self):
+        parts = [self.llm, self.connector, self.proj_in, self.proj_out, self.proj_directvlm]
+        parts += [m for m in (self.vision, self.linear_proj) if m is not None]
         # Not a submodule of llm, so llm.to() does not reach it.
-        self.host.query_tokens_dict.to(device)
+        parts.append(self.host.query_tokens_dict)
+        return parts
+
+    def _capture_mirrors(self):
+        from .cpu_mirror import CpuMirror
+
+        try:
+            return [CpuMirror(part) for part in self._parts()]
+        except (RuntimeError, AttributeError):
+            # Not parked on the CPU, or not a module: stock behaviour.
+            self.fast_offload = False
+            return None
+
+    def to(self, device):
+        on_cpu = torch.device(device).type == "cpu"
+        if self.fast_offload and on_cpu and self._mirrors is not None:
+            for mirror in self._mirrors:
+                mirror.offload()
+            return self
+        if self.fast_offload and not on_cpu and self._mirrors is None:
+            self._mirrors = self._capture_mirrors()
+        for part in self._parts():
+            part.to(device)
         return self
 
     def _tokenize(self, prompt: str, device, image_tokens: int = 0):

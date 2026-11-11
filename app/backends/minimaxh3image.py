@@ -21,6 +21,7 @@ This backend receives a final, ready-to-use prompt.
 """
 
 from .MediaBackend import GenerationCancelled, MediaBackend  # noqa: F401
+from .cpu_mirror import CpuMirror
 
 import os
 
@@ -150,65 +151,6 @@ def _load_gguf_transformer(gguf_path, base_dir=None, compute_dtype=torch.bfloat1
     return model.eval()
 
 
-class CpuMirror:
-    """Offload that frees the GPU copy instead of copying it back to the CPU.
-
-    The weights never change, so the CPU tensors a module had while parked are
-    kept as masters.  ``module.to("cuda")`` makes GPU copies as usual;
-    ``offload()`` puts the masters back, which drops the GPU copies without a
-    device-to-host transfer (those cost 4-5 s per large component into pageable
-    memory; moving to the GPU takes 1-2 s).
-
-    ``Module.to`` replaces parameter data and, for bitsandbytes 4-bit weights,
-    also moves the ``quant_state`` tensors *in place*, so those are snapshotted
-    and restored too.  The module must be on the CPU when this is created.
-    """
-
-    def __init__(self, module: nn.Module):
-        self.module = module
-        self._params = []
-        self._buffers = []
-        self._states = []
-        seen = set()
-        for owner in module.modules():
-            for key, param in owner._parameters.items():
-                if param is None:
-                    continue
-                self._require_cpu(param, key)
-                self._params.append((owner, key, param, param.data))
-                self._capture_state(getattr(param, "quant_state", None), seen)
-            for key, buffer in owner._buffers.items():
-                if buffer is None:
-                    continue
-                self._require_cpu(buffer, key)
-                self._buffers.append((owner, key, buffer))
-
-    @staticmethod
-    def _require_cpu(tensor, key):
-        if tensor.device.type != "cpu":
-            raise RuntimeError(f"CpuMirror needs the module on the CPU, but {key} is on {tensor.device}")
-
-    def _capture_state(self, obj, seen):
-        # Only bitsandbytes' own state objects; their tensor attributes are what `.to` mutates.
-        if obj is None or id(obj) in seen or not type(obj).__module__.startswith("bitsandbytes"):
-            return
-        seen.add(id(obj))
-        for attr, value in vars(obj).items():
-            if isinstance(value, torch.Tensor):
-                self._states.append((obj, attr, value))
-            else:
-                self._capture_state(value, seen)
-
-    def offload(self) -> None:
-        for owner, key, param, data in self._params:
-            owner._parameters[key] = param
-            param.data = data
-        for owner, key, buffer in self._buffers:
-            owner._buffers[key] = buffer
-        for obj, attr, tensor in self._states:
-            setattr(obj, attr, tensor)
-
-
 def _is_remote(path: str) -> bool:
     return "://" in path or path.lower().startswith(("hf.co/", "huggingface.co/"))
 
@@ -252,6 +194,8 @@ class minimaxh3image(MediaBackend):
         # Keep the last-used component on the GPU between requests (default),
         # or move everything off the GPU after each one.
         self.release_gpu_after_request = bool(backend_config.get("release_gpu_after_request", False))
+        # Offload by dropping the GPU copy instead of copying back (see cpu_mirror.py).
+        self.fast_offload = bool(backend_config.get("fast_offload", True))
         self._active_config = None
         self.components_manager = None
         self.pipe = self._build_pipeline(gguf_path, base_dir)
@@ -301,7 +245,8 @@ class minimaxh3image(MediaBackend):
             scheduler=MiniMaxH3Scheduler.from_pretrained(os.path.join(base_dir, "scheduler")),
             sample_sigmas=sigmas,
         )
-        self._install_cpu_mirrors()
+        if self.fast_offload:
+            self._install_cpu_mirrors()
         return pipe
 
     def _install_cpu_mirrors(self) -> None:

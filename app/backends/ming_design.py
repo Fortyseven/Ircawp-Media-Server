@@ -79,6 +79,8 @@ class ming_design(MediaBackend):
         self.encoder = load_encoder(
             encoder_gguf, base_dir, code_dir=self.code_dir, device="cpu"
         )
+        # Park the encoder by dropping its GPU copy instead of copying it back.
+        self.encoder.fast_offload = bool(backend_config.get("fast_offload", True))
         self.generator = load_generator(
             dit_gguf, vae_path, base_dir, code_dir=self.code_dir, device="cuda"
         )

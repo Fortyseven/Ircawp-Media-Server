@@ -630,90 +630,9 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(caps["schedulers"], [])
 
 
-class FakeQuantState:
-    """Stands in for bitsandbytes' QuantState: `.to` moves its tensors in place."""
-
-    __module__ = "bitsandbytes.functional"
-
-    def __init__(self, absmax, nested=None):
-        self.absmax = absmax
-        self.blocksize = 64
-        self.state2 = nested
-
-    def to(self, dtype):
-        self.absmax = self.absmax.to(dtype)
-        if self.state2 is not None:
-            self.state2.to(dtype)
-
-
-class CpuMirrorTests(unittest.TestCase):
-    """`.to(float64)` stands in for the move to the GPU: it replaces tensor data like a device move."""
-
-    def module(self):
-        torch.manual_seed(0)
-        module = torch.nn.Sequential(torch.nn.Linear(4, 3), torch.nn.Linear(3, 2))
-        module.register_buffer("scale", torch.arange(3.0))
-        module.register_buffer("transient", torch.ones(2), persistent=False)
-        return module
-
-    def test_offload_restores_the_original_tensors_without_copying_back(self):
-        module = self.module()
-        original = {k: v for k, v in module.state_dict().items()}
-        parameter = module[0].weight
-        master = parameter.data
-        mirror = backend_module.CpuMirror(module)
-        module.to(torch.float64)  # "onload": new tensors replace the masters
-        self.assertEqual(module[0].weight.dtype, torch.float64)
-        self.assertIsNot(module[0].weight.data, master)
-        mirror.offload()
-        self.assertIs(module[0].weight, parameter)
-        # `.data` builds a new wrapper on every access; the same storage means nothing was copied.
-        self.assertEqual(module[0].weight.data.data_ptr(), master.data_ptr())
-        for key, value in module.state_dict().items():
-            self.assertTrue(torch.equal(value, original[key]), key)
-        self.assertEqual(module.transient.dtype, torch.float32)
-        self.assertEqual(module.scale.dtype, torch.float32)
-
-    def test_can_cycle_onload_and_offload_repeatedly(self):
-        module = self.module()
-        expected = module(torch.ones(1, 4))
-        mirror = backend_module.CpuMirror(module)
-        for _ in range(3):
-            module.to(torch.float64)
-            self.assertEqual(module(torch.ones(1, 4, dtype=torch.float64)).dtype, torch.float64)
-            mirror.offload()
-            self.assertTrue(torch.equal(module(torch.ones(1, 4)), expected))
-
-    def test_quantization_state_mutated_in_place_is_restored(self):
-        module = self.module()
-        nested = FakeQuantState(torch.full((2,), 7.0))
-        state = FakeQuantState(torch.arange(4.0), nested)
-        module[0].weight.quant_state = state
-        absmax, inner = state.absmax, nested.absmax
-        mirror = backend_module.CpuMirror(module)
-        state.to(torch.float64)
-        module.to(torch.float64)
-        mirror.offload()
-        self.assertIs(state.absmax, absmax)
-        self.assertIs(nested.absmax, inner)
-        self.assertEqual(state.absmax.dtype, torch.float32)
-
-    def test_unrelated_objects_are_left_alone(self):
-        class Other:
-            marker = torch.zeros(1)
-
-        module = self.module()
-        module[0].weight.quant_state = Other()  # not a bitsandbytes class: ignored, not captured
-        mirror = backend_module.CpuMirror(module)
-        mirror.offload()  # must not raise
-
-    def test_module_must_be_on_the_cpu_when_captured(self):
-        module = torch.nn.Linear(2, 2).to("meta")
-        with self.assertRaisesRegex(RuntimeError, "CPU"):
-            backend_module.CpuMirror(module)
-
+class MinimaxMirrorWiringTests(unittest.TestCase):
     def test_manager_hooks_are_rewired_to_free_instead_of_copy_back(self):
-        module = self.module()
+        module = torch.nn.Sequential(torch.nn.Linear(4, 3))
         calls = []
         hook = SimpleNamespace(init_hook=lambda m: calls.append("copy-back"))
         user_hook = SimpleNamespace(model=module, hook=hook)
@@ -725,6 +644,19 @@ class CpuMirrorTests(unittest.TestCase):
         hook.init_hook(module)
         self.assertEqual(calls, [])
         self.assertEqual(module[0].weight.data.data_ptr(), weight.data_ptr())
+
+    def test_fast_offload_can_be_switched_off(self):
+        with TemporaryDirectory() as directory:
+            gguf_path = Path(directory) / "t.gguf"
+            gguf_path.write_bytes(b"x")
+            base = make_component_folder(directory)
+            with patch.object(backend_module.minimaxh3image, "_build_pipeline", return_value=object()):
+                on = backend_module.minimaxh3image({"gguf": str(gguf_path), "base_model": str(base)})
+                off = backend_module.minimaxh3image(
+                    {"gguf": str(gguf_path), "base_model": str(base), "fast_offload": False}
+                )
+        self.assertTrue(on.fast_offload)
+        self.assertFalse(off.fast_offload)
 
 
 class TabulatedAdaLNTests(unittest.TestCase):

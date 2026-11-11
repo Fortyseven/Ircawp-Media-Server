@@ -14,6 +14,7 @@ from diffusers import BriaFibo2Pipeline
 from diffusers.utils import load_image
 
 from .MediaBackend import MediaBackend
+from .cpu_mirror import install_fast_offload
 
 
 BASE_MODEL = "briaai/Fibo-2.0-dev"
@@ -83,6 +84,13 @@ class fibo2(MediaBackend):
 
         self.pipe = BriaFibo2Pipeline.from_pretrained(base_model, **pipe_kwargs)
         self.pipe.enable_model_cpu_offload()
+        # Offload by dropping the GPU copy instead of copying back (cpu_mirror.py);
+        # `fast_offload: false` restores the stock behaviour.
+        self.fast_offload = (
+            install_fast_offload(self.pipe)
+            if self.backend_config.get("fast_offload", True)
+            else None
+        )
 
         if self.backend_config.get("compile_transformer", True):
             # Lazy: the compile cost lands on the first request per input shape.

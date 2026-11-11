@@ -70,3 +70,18 @@ Bria's `bria-vgl` helper needs a Gemini API key and is intentionally not used.
 Text-rendering captions (`text_render`) can use the `fonts` pipeline argument
 (Aileron/DejaVu from the repo's `fonts/` folder); the backend does not pass
 fonts yet.
+
+
+## Offload speed
+
+CPU offload frees the GPU copy of each parked component instead of copying it
+back (`fast_offload`, default true; `fast_offload: false` restores the stock
+behaviour). Output is bit-identical. See [ADDING-MODELS.md](ADDING-MODELS.md#offload-speed-cpu_mirrorpy)
+and `app/backends/cpu_mirror.py`.
+
+Measured (1024x1024, warm): `fibo2` 37.7 s -> 35.7 s, `fibo2editturbo` 8.8 s ->
+6.7 s. **Observation, unrelated to offload:** with `compile_transformer: true`
+the first request after loading differs from every later request for the same
+seed (max pixel difference 195 for `fibo2`, 169 for `fibo2editturbo`, with the
+stock offload too), while later requests are bit-identical to each other. It is
+probably the lazy `torch.compile` warm-up; it was not investigated.

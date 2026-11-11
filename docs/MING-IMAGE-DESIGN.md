@@ -279,3 +279,14 @@ still at the 1024 bucket, so they are upscaled), multiple references (rejected).
 - 2048 px peaks at 20.7 GiB; it will not fit beside another loaded backend.
 - Upstream code runs on transformers 5 only through the shims above; a
   Transformers upgrade can break them.
+
+
+## Offload speed
+
+CPU offload frees the GPU copy of each parked component instead of copying it
+back (`fast_offload`, default true; `fast_offload: false` restores the stock
+behaviour). Output is bit-identical. See [ADDING-MODELS.md](ADDING-MODELS.md#offload-speed-cpu_mirrorpy)
+and `app/backends/cpu_mirror.py`.
+
+Only the text encoder is swapped per request (the DiT and VAE stay on the GPU),
+via `MingEncoder.to()`. Measured (1024x1024, warm): 15.9 s -> 11.6 s.

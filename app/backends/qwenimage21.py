@@ -10,6 +10,7 @@ This backend receives a final, ready-to-use prompt.
 """
 
 from .MediaBackend import MediaBackend
+from .cpu_mirror import install_fast_offload
 
 import os
 import re
@@ -188,6 +189,20 @@ class qwenimage21(MediaBackend):
             print(f"Default LoRA active: {self.default_lora!r}")
 
         self.pipe.enable_model_cpu_offload()
+        # Offload by dropping the GPU copy instead of copying back (cpu_mirror.py);
+        # `fast_offload: false` restores the stock behaviour.
+        self.fast_offload = (
+            install_fast_offload(self.pipe)
+            if self.backend_config.get("fast_offload", True)
+            else None
+        )
+
+    def _park(self, module) -> None:
+        """Move a component to the CPU (free when mirrored, else a copy)."""
+        if self.fast_offload is not None:
+            self.fast_offload.park(module)
+        else:
+            module.to("cpu")
 
     def _decode_latents(self, latents, width: int, height: int):
         """Decode packed latents untiled (tiling leaves purple streaks).
@@ -225,7 +240,7 @@ class qwenimage21(MediaBackend):
             finally:
                 vae.use_tiling = False
         finally:
-            vae.to("cpu")
+            self._park(vae)
             torch.cuda.empty_cache()
 
     def _parse_aspect(self, config: dict) -> float:

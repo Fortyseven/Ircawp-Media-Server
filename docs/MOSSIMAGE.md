@@ -147,3 +147,14 @@ Plain-English prompts work despite the JSON training captions. Compared with
 quality against the unquantized fp32 model or bf16 base plus LoRA, whether the
 fp32 modulation weights from the original checkpoint would improve results,
 JSON-caption prompts, offline use, and the HTTP API for this backend.
+
+
+## Offload speed
+
+CPU offload frees the GPU copy of each parked component instead of copying it
+back (`fast_offload`, default true; `fast_offload: false` restores the stock
+behaviour). Output is bit-identical. See [ADDING-MODELS.md](ADDING-MODELS.md#offload-speed-cpu_mirrorpy)
+and `app/backends/cpu_mirror.py`.
+
+Measured (1024x1024, warm): `mossimage` 62.0 s -> 58.4 s (50 steps, so the
+~3-4 s saved is a small share), `mossimage8` 10.5 s -> 8.2 s.
