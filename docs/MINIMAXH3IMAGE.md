@@ -5,37 +5,18 @@ revision `00dd081ebdd33315adf2c4d84f64aa327ddf3039`, released 2026-11-03) is a
 33.1B-parameter single-stream diffusion transformer, distilled to **six
 sampling steps with no guidance**, that generates natively at 4-20 megapixels.
 It handles text-to-image and multi-reference editing (up to 16 references).
-This backend runs it as **text-to-image only** on a 24 GB card, with a 4-bit
-transformer and a 4-bit text encoder. Editing is prepared but not exposed (see
-[Editing: not enabled yet](#editing-not-enabled-yet)).
-
-## License: read before use
-
-The MiniMax-H3-Image Community License (`models/minimax-h3-image/LICENSE`) is
-**not** an open license. Points that matter here (this is a summary, not legal
-advice; read the file):
-
-- **Applicable Territory is worldwide excluding the EU, UK, South Korea and the
-  US.** Use, reproduction and distribution outside it are not authorized unless
-  MiniMax grants a separate licence. The user directing this work stated they
-  have this covered; the code does not enforce it.
-- Written authorization is required if you or affiliates exceed USD 1M annual
-  revenue, **or if you provide a Hosted Service to any third party.**
-- Commercial products must prominently display "MiniMax-H3-Image".
-- Quantized files are "Model Derivatives": the same terms apply to the GGUF and
-  to the NF4 text encoder. They must not be redistributed outside the territory.
-  A NOTICE file and a copy of the licence must accompany any redistribution.
-- Outputs may not be used to improve other AI models; acceptable-use rules in
-  Exhibit A apply.
+This backend runs it on a 24 GB card with a 4-bit transformer and a 4-bit text
+encoder, for text-to-image and for reference-image editing. **Editing has unit
+tests only; it has not been run on the real model yet** (see [Editing](#editing)).
 
 ## What is in the checkpoint, and what this backend runs
 
-| Part | Official | This backend |
-| --- | --- | --- |
-| Transformer (`MiniMaxH3ImageTransformer2DModel`) | 66.3 GB BF16, 50 blocks, hidden 5376, 56 heads | `models/minimax_h3_image_Q4_K_S.gguf`, 12.05 GB |
-| Text encoder (Qwen3-VL-32B, reads `hidden_states[50]`) | 66.7 GB BF16, 64 layers | `models/minimax-h3-image/text_encoder`, bitsandbytes NF4, 51 layers, 17.4 GB |
-| VAE (24-ch, 16x, ViT decoder) | 2.34 GB FP32 | copied unchanged, `models/minimax-h3-image/vae` |
-| Tokenizer, processor, scheduler, `pdd_config.json` | small | copied unchanged |
+| Part                                                   | Official                                       | This backend                                                                 |
+| ------------------------------------------------------ | ---------------------------------------------- | ---------------------------------------------------------------------------- |
+| Transformer (`MiniMaxH3ImageTransformer2DModel`)       | 66.3 GB BF16, 50 blocks, hidden 5376, 56 heads | `models/minimax_h3_image_Q4_K_S.gguf`, 12.05 GB                              |
+| Text encoder (Qwen3-VL-32B, reads `hidden_states[50]`) | 66.7 GB BF16, 64 layers                        | `models/minimax-h3-image/text_encoder`, bitsandbytes NF4, 51 layers, 17.4 GB |
+| VAE (24-ch, 16x, ViT decoder)                          | 2.34 GB FP32                                   | copied unchanged, `models/minimax-h3-image/vae`                              |
+| Tokenizer, processor, scheduler, `pdd_config.json`     | small                                          | copied unchanged                                                             |
 
 Total on disk for the local model: **31.9 GB** (12.05 GB GGUF + 19.8 GB component
 folder), plus the 40.5 GB retained BF16 GGUF. The official downloads in the Hugging
@@ -134,11 +115,11 @@ looks rows up by timestep.
 
 595 tensors, 12,053,168,288 bytes (4.79 bits/weight overall):
 
-| Tensors | Type |
-| --- | --- |
-| 300 block linears (to_q/k/v, to_out, ff in/out; 50 blocks x 6) | Q4_K |
-| 12 token-refiner linears (text conditioning path) | Q8_0 |
-| patch input, context embedder, time embedder, norm-out linear, 6 PDD heads, norms, biases, 50 AdaLN tables, timestep grid (283) | F32 |
+| Tensors                                                                                                                         | Type |
+| ------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| 300 block linears (to_q/k/v, to_out, ff in/out; 50 blocks x 6)                                                                  | Q4_K |
+| 12 token-refiner linears (text conditioning path)                                                                               | Q8_0 |
+| patch input, context embedder, time embedder, norm-out linear, 6 PDD heads, norms, biases, 50 AdaLN tables, timestep grid (283) | F32  |
 
 The BF16 file has the same 595 tensors with the 312 matrices in BF16 and the 283
 small tensors in F32. Matrices that must stay high precision are F32 in both.
@@ -157,6 +138,9 @@ backends:
         # Park every component on the CPU after each request, freeing the GPU
         # for other users (default false: the last-used component stays resident).
         release_gpu_after_request: false
+        # Print one line per request splitting the time into setup / each step /
+        # decode (adds a GPU sync per step, so leave off normally).
+        log_timings: false
 ```
 
 Select `model: "minimaxh3image"` in an API request. The top-level default
@@ -180,7 +164,7 @@ Behaviour notes:
 - `release_gpu_after_request: true` moves every component off the GPU when a
   request ends (success, error or cancellation), at ~0.3 s cost, so something
   else (e.g. `llama-server`) can use the card. With it off, ~13-18 GB stays
-  allocated while idle. It does not lower the peak *during* a request.
+  allocated while idle. It does not lower the peak _during_ a request.
 - Prompts are used verbatim (no chat template), truncated at 4096 tokens. The
   model wants long, concrete English descriptions. The card's prompt expander
   (MiniMax-H3-Image-PE) is a separate model and is not integrated; prompt
@@ -194,12 +178,12 @@ each evicted component back to the CPU, and a GPU-to-CPU copy of that size costs
 4-5 s (it allocates pageable memory), against 1-2 s for CPU-to-GPU. Measured for a
 1024x1024 request (canvas 2048x2048):
 
-| | copy-back offload | `CpuMirror` |
-| --- | --- | --- |
-| Whole request | 26.9 s | 15.6 s |
-| Step 0 (evict text encoder, load transformer, first step) | 9.4 s | 3.1 s |
-| Steps 1-5 and VAE decode | 1.8 s each | 1.8 s each |
-| After the VAE decode (offload, PNG save) | 4.7-7 s | 0.4 s |
+|                                                           | copy-back offload | `CpuMirror` |
+| --------------------------------------------------------- | ----------------- | ----------- |
+| Whole request                                             | 26.9 s            | 15.6 s      |
+| Step 0 (evict text encoder, load transformer, first step) | 9.4 s             | 3.1 s       |
+| Steps 1-5 and VAE decode                                  | 1.8 s each        | 1.8 s each  |
+| After the VAE decode (offload, PNG save)                  | 4.7-7 s           | 0.4 s       |
 
 `CpuMirror` (now the shared `app/backends/cpu_mirror.py`, also used by the other
 backends; `fast_offload: false` disables it here too) exploits that the weights never
@@ -217,23 +201,120 @@ It is installed on the manager's hooks once all components are loaded.
   were already held to park each component. (Server RSS was measured at ~18 GB
   loaded before `CpuMirror` was added and not re-measured since.)
 
-## Editing: not enabled yet
+## Editing
 
-The pipeline's `image_conditioned` workflow supports up to 16 references
-(`<Picture 1>` ... in the prompt). What is already prepared:
+Reference-image editing runs through the pipeline's `image_conditioned`
+workflow. It is selected by passing `media` to `execute()` (the server's
+`POST /images/edits` does this), and the same checkpoint, GGUF and text encoder
+are used. **Status: implemented and unit-tested with a mocked pipeline; not yet
+run on the real model or GPU.** What that leaves unverified is listed below.
 
-- The text encoder keeps the Qwen3-VL **vision tower in bf16** (~1 GB), which the
-  edit presentation needs. It is unused for text-to-image.
-- The GGUF holds modulation for the 0.999 reference timestep, and the loader's
-  tabulated AdaLN handles a forward with two distinct timesteps (unit-tested
-  against the dense model).
-- `execute()` rejects `media` with a clear error instead of ignoring it.
+How a request is handled:
 
-Still to do, none of it tested: pass the reference PIL images as `image=` (the
-pipeline resizes references whose short edge is outside 1024-2048); add the
-`/images/edits` plumbing and a `max_input_edge`; measure VRAM with references
-(they add rows to the packed sequence and the VAE encoder runs at their own
-size); and check edit fidelity.
+- **References**: up to 16 images (the checkpoint's limit; more raise a clear
+  error before any GPU work). They are opened upright (EXIF orientation applied)
+  and converted to RGB, which **drops any alpha channel** (the pipeline does the
+  same). Each side must be at least 32 px; unreadable files raise a
+  `ValueError` naming the file.
+- **Prompt**: refer to them in order as `<Picture 1>`, `<Picture 2>` ...; the
+  prompt is used verbatim. MiniMax suggests naming what to preserve, then what to
+  change, then describing the target image in full, e.g. "Keep everything in
+  `<Picture 1>` as it is, but change the blue net to a red one."
+- **Output size**: an explicit `size` (width/height) wins. Otherwise the output
+  follows the _first_ reference's aspect ratio with its long edge at
+  `max_output_size`, rounded to 16 px. The server sets `max_output_size` to the
+  input's own long edge, so an edit returns at the input's size by default (the
+  pipeline's own default would be 2048x2048). The same 4 MP minimum canvas as
+  text-to-image applies: a 1024 px edit is generated on a 2048x2048-area canvas
+  and resized back.
+- **Reference resolution**: the server first shrinks inputs to
+  `backends.minimaxh3image.max_input_edge` (default 1440). The pipeline then
+  resizes each reference for the VAE so its short edge is within 1024-2048, and
+  for the vision encoder to exactly 1024, so **small references are upscaled**
+  and every reference costs at least ~1024 packed-sequence rows plus ~1024
+  vision tokens. Expect time and VRAM to grow with the number of references.
+- **Metadata**: the PNG records `task=image-edit` and the reference count.
+  Progress phase is `encoding references` instead of `encoding prompt`.
+- Everything else (fixed six steps, no `steps`/CFG/negative prompt, seed,
+  cancellation, `fast_offload`, `release_gpu_after_request`) is as for
+  text-to-image.
+
+How it is built on what was prepared earlier: the text encoder keeps the
+Qwen3-VL **vision tower in bf16** (~1 GB) that the edit presentation needs, the
+GGUF holds the AdaLN modulation for the 0.999 reference timestep, and the
+loader's `TabulatedAdaLN` selects rows for a forward with two distinct timesteps
+(unit-tested against a dense model at tiny scale).
+
+### Why editing is slower than text-to-image
+
+Every reference adds rows to the packed sequence the transformer attends over,
+on all six steps: ~1000 latent rows for its VAE copy, plus ~1000 vision tokens in
+the text-encoder prompt (a small reference is upscaled to 1024 px first, so it
+costs the same). For a 1024x1024 input and output the sequence is ~6,200 rows
+against ~4,150 for text-to-image (+50%); for a 1440x1080 input about +70%.
+Linear cost grows with rows and attention with rows squared. A crude step-time
+curve fitted to two of the text-to-image runs predicts about +1 s per step, so
+**+5-6 s over six steps** (estimate, not a measurement), plus the vision tower,
+the longer text pass and the reference VAE encode. A user-reported edit was
+4-5 s slower than text-to-image, consistent with that. It is inherent to how the
+model conditions on references (the reference rows cannot be cached: attention
+is bidirectional and they change with the generated rows at every layer).
+
+Set `log_timings: true` to see the real split in the server log:
+
+```
+[minimaxh3image] edit (1 reference) 1024x1024, 6195 rows: setup 4.1s | steps 3.2 2.8 2.8 2.8 2.8 2.8 (sum 17.2s) | decode+save 2.0s | total 23.3s
+```
+
+(illustrative numbers; `setup` is everything before step 0: text/vision encode,
+reference VAE encode and the model swaps). Levers that would cut the cost, **not
+implemented because each trades quality or fidelity and none is measured**:
+
+- Generate on a smaller canvas: the pipeline's `min_generation_area` (default
+  2048x2048) makes any request under 4 MP generate on a 4 MP canvas and resize
+  back. Lowering it shrinks the generated rows most (a 1 MP canvas has a quarter
+  of them), but the card says output quality is best from 4 MP up.
+- Lower the references' minimum short edge (`reference_min_short_edge`, default 1024) so small references are not upscaled. This changes what the model sees
+  relative to how it was trained.
+- Fewer or smaller references.
+
+### Not yet verified (needs the real model)
+
+- That an edit actually works: instruction following, and that unchanged scene
+  detail is preserved. This is the first thing to check by eye.
+- Peak VRAM and time with 1, a few, and many references, and with references
+  larger than ~1440 px. The 16-reference limit is the model's, not a measured
+  limit of this card; the text-to-image peak at 16 MP was already within ~1.5 GB
+  of the card's capacity.
+- The 4-bit text encoder's _vision_ path (the tower is bf16, but the language
+  layers that consume its features are NF4), and the `deepstack` feature
+  injection at layers 8/16/24 inside the truncated 51-layer stack.
+- Whether alpha-dropping (transparent PNGs become whatever RGB sits under the
+  alpha) is acceptable for your inputs.
+
+### Trying it
+
+With the server running and the GPU free (unload other backends first):
+
+```python
+# python3 edit_test.py input.png [second.png ...]   (stdlib only)
+import base64, json, sys, time, urllib.request
+
+images = [{"image_url": "data:image/png;base64," + base64.b64encode(open(p, "rb").read()).decode()}
+          for p in sys.argv[1:]]
+body = {"model": "minimaxh3image", "seed": 7, "images": images,
+        "prompt": "Keep everything in <Picture 1> as it is, but change the blue net to a red one."}
+t = time.time()
+req = urllib.request.Request("http://127.0.0.1:8100/images/edits", json.dumps(body).encode(),
+                             {"Content-Type": "application/json"})
+data = json.load(urllib.request.urlopen(req, timeout=900))["data"][0]["b64_json"]
+open("edited.png", "wb").write(base64.b64decode(data))
+print(f"done in {time.time() - t:.1f}s -> edited.png")
+```
+
+Watch `nvidia-smi` for the peak while it runs, and try two or three references
+(`images` is a list; refer to them as `<Picture 1>`, `<Picture 2>` ...). Please
+record the time, peak VRAM and whether the result is what you asked for.
 
 ## Verification
 
@@ -241,26 +322,27 @@ size); and check edit fidelity.
 .venv/bin/python -m unittest discover -s tests
 ```
 
-`tests/test_minimaxh3image.py` (51 tests) covers: converter name mapping, QKV
+`tests/test_minimaxh3image.py` (59 tests) covers: converter name mapping, QKV
 de-interleave, SwiGLU gate/value swap, PDD heads, dtypes, tiny end-to-end
 safetensors-to-GGUF conversion loaded into the real
 `MiniMaxH3ImageTransformer2DModel` class; the AdaLN table equal to the real
 `MiniMaxH3ImageAdaLayerNormModulation` module; the GGUF loader reproducing a
 dense transformer's outputs (including a quantized-linear path and a two-timestep
 call); backend path validation, request sizing, seed, metadata, cancellation,
-progress and phases, the release option, `CpuMirror` (including restoring
+progress and phases, editing (reference forwarding, EXIF orientation, output sizing,
+the 16-reference and 32 px limits, unreadable files), the release option, `CpuMirror` (including restoring
 in-place-mutated quantization state), no state leaking between requests, disposal
 and the advertised capabilities. These are mocked or tiny; they do not establish image quality.
 
 Real artifact checks (2026-11-11):
 
-| Check | Result |
-| --- | --- |
-| BF16 GGUF vs official `transformer_diffusers` (HTTP range reads) | 595 tensor names/shapes match; 64 spot-checked tensors (blocks 0 and 49, refiner, embedders, norm-out, PDD head 5) bit-identical (max abs error 0) |
-| AdaLN tables, blocks 0 and 49, vs the real module at the 7 timesteps | max abs error 0 |
-| Q4_K_S tensor types via `GGUFReader` | 300 Q4_K, 12 Q8_0, 283 F32 |
-| 4-bit text encoder vs bf16 reference, `hidden_states[50]`, 3 prompts | cosine mean 0.9961-0.9970, min 0.988-0.994, relative error 1.3-1.4% |
-| Transformer alone on the GPU (synthetic input, 4096 image tokens) | 11.12 GiB resident, 12.13 GiB peak, ~2 s/step |
+| Check                                                                | Result                                                                                                                                             |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| BF16 GGUF vs official `transformer_diffusers` (HTTP range reads)     | 595 tensor names/shapes match; 64 spot-checked tensors (blocks 0 and 49, refiner, embedders, norm-out, PDD head 5) bit-identical (max abs error 0) |
+| AdaLN tables, blocks 0 and 49, vs the real module at the 7 timesteps | max abs error 0                                                                                                                                    |
+| Q4_K_S tensor types via `GGUFReader`                                 | 300 Q4_K, 12 Q8_0, 283 F32                                                                                                                         |
+| 4-bit text encoder vs bf16 reference, `hidden_states[50]`, 3 prompts | cosine mean 0.9961-0.9970, min 0.988-0.994, relative error 1.3-1.4%                                                                                |
+| Transformer alone on the GPU (synthetic input, 4096 image tokens)    | 11.12 GiB resident, 12.13 GiB peak, ~2 s/step                                                                                                      |
 
 ### Local GPU smoke test (2026-11-11)
 
@@ -274,14 +356,14 @@ the page cache) and were each measured once or twice, not benchmarked. The
 first table is **with `CpuMirror`** (see above); the figures in parentheses are
 the earlier ones with the stock copy-back offload.
 
-| Request | Canvas | Time | Whole-GPU peak (`nvidia-smi`) |
-| --- | --- | --- | --- |
-| 1024x1024 (seed 1) | 2048x2048 | 15.6 s (26.9 s) | - |
-| 2048x2048 | 2048x2048 | 17.4 s (23.5 s) | 18.8 GB (18.7) |
-| 4096x4096 (the card's 1:1 recommendation, 16 MP) | 4096x4096 | 61.1 s (71.7 s) | 22.1 GB (20.9) |
-| 5472x3072 (the card's 16:9 recommendation, 16.8 MP) | 5472x3072 | 62.5 s (72.1 s) | 19.4 GB (20.9) |
-| 1024x1024 through `/images/generations`, warm | 2048x2048 | 15.8 s | - |
-| 1536x1024 through `/images/generations`, first request after server start, incl. model load (earlier run) | 2496x1664 | 50.7 s | - |
+| Request                                                                                                   | Canvas    | Time            | Whole-GPU peak (`nvidia-smi`) |
+| --------------------------------------------------------------------------------------------------------- | --------- | --------------- | ----------------------------- |
+| 1024x1024 (seed 1)                                                                                        | 2048x2048 | 15.6 s (26.9 s) | -                             |
+| 2048x2048                                                                                                 | 2048x2048 | 17.4 s (23.5 s) | 18.8 GB (18.7)                |
+| 4096x4096 (the card's 1:1 recommendation, 16 MP)                                                          | 4096x4096 | 61.1 s (71.7 s) | 22.1 GB (20.9)                |
+| 5472x3072 (the card's 16:9 recommendation, 16.8 MP)                                                       | 5472x3072 | 62.5 s (72.1 s) | 19.4 GB (20.9)                |
+| 1024x1024 through `/images/generations`, warm                                                             | 2048x2048 | 15.8 s          | -                             |
+| 1536x1024 through `/images/generations`, first request after server start, incl. model load (earlier run) | 2496x1664 | 50.7 s          | -                             |
 
 The 4096x4096 peak is higher than before because the manager now keeps the
 transformer resident during the VAE decode when it fits; that leaves **about 1.5
@@ -302,16 +384,15 @@ GB of headroom at 16 MP**, so close other GPU users before large sizes.
   crop of the 4096x4096 shows clean burlap weave, crust and wood grain with no
   tiling seams or decode artifacts. Non-square sizes return the requested size.
 - **API**: `GET /backends` lists `minimaxh3image` with `{seed: true, steps: false,
-  cfg: false, negative_prompt: false, schedulers: []}` and the default backend is
+cfg: false, negative_prompt: false, schedulers: []}` and the default backend is
   unchanged. `POST /images/generations` with `model: "minimaxh3image"` works, and
   `steps: 30` is ignored (PNG metadata says 6). `/images/progress` reports `1/6`
   mid-run, `/images/cancellations` aborts it (HTTP 409 "Generation cancelled")
-  and, with `release_gpu_after_request: true`, the GPU is released afterwards. `/images/edits` returns the backend's
-  "does not support reference images yet" message as HTTP 500, which is how the
-  server reports any backend `ValueError` (the MOSS backend behaves the same).
+  and, with `release_gpu_after_request: true`, the GPU is released afterwards. `/images/edits` returned a "does not
+  support reference images" error as HTTP 500 at the time of this test, before
+  editing was added.
 - Not tested: the frontend UI, running next to other loaded backends, long-term
   stability, concurrent requests.
-
 
 ## Limitations
 
@@ -323,7 +404,7 @@ GB of headroom at 16 MP**, so close other GPU users before large sizes.
 - The Q4_K_S file uses llama.cpp's default K-quant for every block linear; no
   per-layer sensitivity study was done. Q5_K_M/Q6_K of the same BF16 file would
   fit easily (the transformer is only 11 GB) if quality ever disappoints.
-- Editing is untested (see above).
+- Editing is untested on the real model (see [Editing](#editing)).
 - Prompt expansion (MiniMax-H3-Image-PE) is not integrated.
 - Diffusers is now pinned to commit `875373ac7f5856071e345a3e394c74efccc6b9e6`
   (the merge of upstream PR #15230 that added MiniMax-H3-Image, 2026-11-10); the

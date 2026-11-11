@@ -62,7 +62,7 @@ Available backends (set via `model` field or `config.yml`):
 - `qwenimage21turbo` — Qwen-Image-2.1-Turbo, local Q4_K_S GGUF, eight-step sampling (see [docs/QWENIMAGE21-TURBO.md](docs/QWENIMAGE21-TURBO.md))
 - `mossimage` — MOSS-Image-SFT (text-to-image only), local Q4_K_S GGUF + 4-bit text encoder, 50 steps, CFG 3 (see [docs/MOSSIMAGE.md](docs/MOSSIMAGE.md))
 - `mossimage8` — MOSS-Image-SFT 8-step DMD distillation (same Q4_K_S GGUF plus unmerged LoRA), up to 8 steps, no CFG (see [docs/MOSSIMAGE.md](docs/MOSSIMAGE.md))
-- `minimaxh3image` — MiniMax-H3-Image (text-to-image; reference-image editing prepared but not exposed yet), local Q4_K_S GGUF + 4-bit text encoder, fixed 6-step distilled sampling, no CFG, 2048px default; community license restricts territory and hosted use (see [docs/MINIMAXH3IMAGE.md](docs/MINIMAXH3IMAGE.md))
+- `minimaxh3image` — MiniMax-H3-Image (text-to-image and multi-reference editing up to 16 images; editing not yet run on the real model), local Q4_K_S GGUF + 4-bit text encoder, fixed 6-step distilled sampling, no CFG, 2048px default; community license restricts territory and hosted use (see [docs/MINIMAXH3IMAGE.md](docs/MINIMAXH3IMAGE.md))
 - `ming_design` — Ming-Image-0.1-Design (text-to-image and single-image editing; RGBA/transparent output, strong text rendering), local Q4_K_M GGUFs, 12 steps, CFG 1.0; needs `just ming-setup` (see [docs/MING-IMAGE-DESIGN.md](docs/MING-IMAGE-DESIGN.md))
 - `flux3klein` — FLUX.3 Klein, local Q5_K_M GGUF transformer, fixed 16-step distilled sampling, max 1024px
 - `fibo2` — Fibo 2.0 Dev (Bria; text-to-image and up to 5-image editing), gated official weights with on-load 4-bit transformer, 30 steps, CFG 5, non-commercial license (see [docs/FIBO2.md](docs/FIBO2.md))

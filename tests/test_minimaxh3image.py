@@ -502,13 +502,147 @@ class BackendTests(unittest.TestCase):
         kwargs = self.pipeline.call_args.kwargs
         self.assertEqual((kwargs["width"], kwargs["height"]), (1360, 768))
 
-    def test_reference_images_are_rejected_without_generating(self):
-        source = self.directory / "input.png"
-        Image.new("RGB", (32, 32), "red").save(source)
-        with self.assertRaisesRegex(ValueError, r"(?i)reference|edit"):
-            self.backend().execute("edit it", self.request(), media=[str(source)])
+    # -- editing -----------------------------------------------------------
+
+    def reference(self, name="ref.png", size=(640, 480), color="red", mode="RGB"):
+        path = self.directory / name
+        Image.new(mode, size, color).save(path)
+        return str(path)
+
+    def test_text_to_image_passes_no_image_argument(self):
+        self.backend().execute("a fox", self.request())
+        self.assertNotIn("image", self.pipeline.call_args.kwargs)
+        with Image.open(self.output) as saved:
+            self.assertNotIn("task", saved.info)
+            self.assertNotIn("references", saved.info)
+
+    def test_references_are_forwarded_in_order_as_rgb_images(self):
+        first = self.reference("a.png", (640, 480), "red")
+        second = self.reference("b.png", (300, 400), (0, 128, 255, 90), mode="RGBA")
+        backend = self.backend()
+        media = [first, second]
+        backend.execute("Swap <Picture 1> and <Picture 2>", self.request(), media=media)
+        images = self.pipeline.call_args.kwargs["image"]
+        self.assertEqual([image.size for image in images], [(640, 480), (300, 400)])
+        self.assertTrue(all(image.mode == "RGB" for image in images))
+        self.assertEqual(images[0].getpixel((0, 0)), (255, 0, 0))
+        self.assertEqual(media, [first, second])  # the caller's list is not mutated
+        # The prompt, with its <Picture N> references, is passed verbatim.
+        self.assertEqual(self.pipeline.call_args.kwargs["prompt"], "Swap <Picture 1> and <Picture 2>")
+
+    def test_edit_metadata_records_the_task_and_reference_count(self):
+        backend = self.backend()
+        backend.execute("edit", self.request(), media=[self.reference("a.png"), self.reference("b.png")])
+        with Image.open(self.output) as saved:
+            self.assertEqual(saved.info["task"], "image-edit")
+            self.assertEqual(saved.info["references"], "2")
+            self.assertEqual(saved.info["inference_steps"], "6")
+
+    def test_exif_orientation_is_applied_before_sizing(self):
+        path = self.directory / "rotated.jpg"
+        exif = Image.Exif()
+        exif[0x0112] = 6  # stored 320x160, displayed rotated to 160x320
+        Image.new("RGB", (320, 160), "blue").save(path, exif=exif)
+        backend = self.backend()
+        config = {"output_file": str(self.output), "seed": 1, "max_output_size": 320}
+        backend.execute("edit", config, media=[str(path)])
+        kwargs = self.pipeline.call_args.kwargs
+        self.assertEqual(kwargs["image"][0].size, (160, 320))
+        # Portrait, not the stored landscape (which would give 320x160).
+        self.assertEqual((kwargs["width"], kwargs["height"]), (160, 320))
+
+    def test_edit_output_follows_the_first_reference_aspect_at_max_output_size(self):
+        backend = self.backend()
+        for size, max_edge, expected in (
+            ((640, 480), 320, (320, 240)),
+            ((480, 640), 320, (240, 320)),
+            ((512, 512), 1024, (1024, 1024)),
+            ((300, 200), 960, (960, 640)),
+        ):
+            with self.subTest(size=size, max_edge=max_edge):
+                config = {"output_file": str(self.output), "seed": 1, "max_output_size": max_edge}
+                backend.execute("edit", config, media=[self.reference("r.png", size)])
+                kwargs = self.pipeline.call_args.kwargs
+                self.assertEqual((kwargs["width"], kwargs["height"]), expected)
+
+    def test_only_the_first_reference_decides_the_output_aspect(self):
+        backend = self.backend()
+        config = {"output_file": str(self.output), "seed": 1, "max_output_size": 320}
+        backend.execute(
+            "edit", config, media=[self.reference("a.png", (640, 480)), self.reference("b.png", (100, 400))]
+        )
+        kwargs = self.pipeline.call_args.kwargs
+        self.assertEqual((kwargs["width"], kwargs["height"]), (320, 240))
+
+    def test_edit_defaults_to_the_models_2048_long_edge(self):
+        backend = self.backend()
+        backend.execute("edit", {"output_file": str(self.output), "seed": 1}, media=[self.reference(size=(600, 300))])
+        kwargs = self.pipeline.call_args.kwargs
+        self.assertEqual((kwargs["width"], kwargs["height"]), (2048, 1024))
+
+    def test_explicit_size_beats_the_reference_aspect(self):
+        backend = self.backend()
+        backend.execute("edit", self.request(width=1360, height=768), media=[self.reference(size=(300, 900))])
+        kwargs = self.pipeline.call_args.kwargs
+        self.assertEqual((kwargs["width"], kwargs["height"]), (1360, 768))
+
+    def test_up_to_sixteen_references_are_accepted_and_more_are_rejected_before_generating(self):
+        backend = self.backend()
+        sixteen = [self.reference(f"r{i}.png", (64, 64)) for i in range(16)]
+        backend.execute("edit", self.request(), media=sixteen)
+        self.assertEqual(len(self.pipeline.call_args.kwargs["image"]), 16)
+        self.pipeline.reset_mock()
+        with self.assertRaisesRegex(ValueError, "at most 16"):
+            backend.execute("edit", self.request(), media=sixteen + [self.reference("extra.png", (64, 64))])
+        self.pipeline.assert_not_called()
+
+    def test_too_small_reference_is_rejected_by_name_before_generating(self):
+        tiny = self.reference("tiny.png", (31, 200))
+        with self.assertRaisesRegex(ValueError, r"tiny\.png.*at least 32"):
+            self.backend().execute("edit", self.request(), media=[self.reference("ok.png"), tiny])
         self.pipeline.assert_not_called()
         self.assertFalse(self.output.exists())
+
+    def test_unreadable_or_missing_reference_is_a_clear_error_not_a_crash(self):
+        broken = self.directory / "broken.png"
+        broken.write_bytes(b"not an image")
+        backend = self.backend()
+        for path in (str(broken), str(self.directory / "missing.png")):
+            with self.subTest(path=path):
+                with self.assertRaisesRegex(ValueError, "cannot read reference image"):
+                    backend.execute("edit", self.request(), media=[path])
+        self.pipeline.assert_not_called()
+
+    def test_edit_reports_the_reference_phase_and_text_to_image_does_not(self):
+        backend = self.backend()
+        phases = []
+
+        def record(**kwargs):
+            phases.append(progress.get("phase"))
+            return [Image.new("RGB", (kwargs["width"], kwargs["height"]))]
+
+        self.pipeline.side_effect = record
+        progress = {}
+        backend.execute("edit", self.request(progress_state=progress), media=[self.reference()])
+        backend.execute("a fox", self.request(progress_state=progress))
+        self.assertEqual(phases, ["encoding references", "encoding prompt"])
+
+    def test_cancellation_still_aborts_an_edit_between_steps(self):
+        backend = self.backend()
+        cancellation = Event()
+
+        def cancel_after_first_step(**kwargs):
+            backend._before_step(None, (), {"pdd_step_index": 0})
+            backend._after_step(None, (), {"pdd_step_index": 0}, None)
+            cancellation.set()
+            backend._before_step(None, (), {"pdd_step_index": 1})
+            self.fail("cancellation did not abort the edit")
+
+        self.pipeline.side_effect = cancel_after_first_step
+        with self.assertRaises(GenerationCancelled):
+            backend.execute("edit", self.request(cancellation_event=cancellation), media=[self.reference()])
+        self.assertFalse(self.output.exists())
+        self.assertIsNone(backend._active_config)
 
     def test_empty_prompt_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "prompt"):
@@ -611,6 +745,76 @@ class BackendTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             backend.execute("a fox", self.request(progress_state=progress))
         self.assertNotIn("phase", progress)
+
+    # -- timing log --------------------------------------------------------
+
+    def run_and_capture(self, backend, *args, **kwargs):
+        import contextlib
+        import io
+
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            result = backend.execute(*args, **kwargs)
+        return result, buffer.getvalue()
+
+    def test_timings_are_not_logged_by_default(self):
+        backend = self.backend()
+        self.assertFalse(backend.log_timings)
+        _, output = self.run_and_capture(backend, "a fox", self.request())
+        self.assertEqual(output, "")
+
+    def test_timing_summary_is_one_line_with_setup_steps_decode_and_total(self):
+        backend = self.backend(log_timings=True)
+        _, output = self.run_and_capture(backend, "a fox", self.request())
+        lines = output.strip().splitlines()
+        self.assertEqual(len(lines), 1)
+        line = lines[0]
+        self.assertTrue(line.startswith("[minimaxh3image] text-to-image 96x64: setup "), line)
+        for part in ("| steps ", "(sum ", "| decode+save ", "| total "):
+            self.assertIn(part, line)
+        self.assertEqual(line.split("| steps ")[1].split(" (sum")[0].count(" ") + 1, STEPS)
+        self.assertIsNone(backend._timing)
+
+    def test_timing_summary_labels_edits_and_reports_the_sequence_rows(self):
+        backend = self.backend(log_timings=True)
+
+        def with_rows(**kwargs):
+            for step in range(STEPS):
+                backend._before_step(
+                    None, (), {"pdd_step_index": step, "position_ids": torch.zeros(6195, 3)}
+                )
+                backend._after_step(None, (), {"pdd_step_index": step}, None)
+            return [Image.new("RGB", (kwargs["width"], kwargs["height"]))]
+
+        self.pipeline.side_effect = with_rows
+        _, one = self.run_and_capture(backend, "edit", self.request(), media=[self.reference()])
+        self.assertIn("edit (1 reference) 96x64, 6195 rows:", one)
+        _, two = self.run_and_capture(
+            backend, "edit", self.request(), media=[self.reference("a.png"), self.reference("b.png")]
+        )
+        self.assertIn("edit (2 references)", two)
+
+    def test_timing_is_reported_even_when_cancelled_and_state_is_reset(self):
+        backend = self.backend(log_timings=True)
+        cancellation = Event()
+
+        def cancel_after_two(**kwargs):
+            for step in range(STEPS):
+                backend._before_step(None, (), {"pdd_step_index": step})
+                backend._after_step(None, (), {"pdd_step_index": step}, None)
+                if step == 1:
+                    cancellation.set()
+            self.fail("not cancelled")
+
+        self.pipeline.side_effect = cancel_after_two
+        import contextlib
+        import io
+
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer), self.assertRaises(GenerationCancelled):
+            backend.execute("a fox", self.request(cancellation_event=cancellation))
+        self.assertIn("stopped after 2 of 6 steps", buffer.getvalue())
+        self.assertIsNone(backend._timing)
 
     def test_dispose_releases_pipeline_and_component_manager(self):
         backend = self.backend()

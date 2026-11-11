@@ -79,6 +79,8 @@ backends:
     # MiniMax-H3-Image: text-to-image, fixed six-step distilled grid, no CFG.
     # Needs the transformer GGUF plus the component folder built by
     # scripts/prepare_minimaxh3image_components.py (see docs/MINIMAXH3IMAGE.md).
+    # Also edits images (up to 16 references, `<Picture 1>`... in the prompt);
+    # inputs are shrunk to max_input_edge (default 1440) first.
     # Anything under ~4 MP is generated on a 2048x2048-area canvas, so small
     # sizes cost the same as 2048px. Relative paths resolve against the server's
     # working directory.
@@ -90,6 +92,8 @@ backends:
         # (e.g. llama-server) can have the card. Default false: the last-used
         # component stays resident, which is a little faster between requests.
         # release_gpu_after_request: true
+        # Print one per-request timing line (setup / steps / decode) to the log.
+        # log_timings: true
     ming_design:
         max_output_size: 1024
         steps: 12

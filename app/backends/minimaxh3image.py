@@ -9,7 +9,9 @@ time.
 
 The checkpoint is distilled to a fixed six-step grid with one output head per
 step and no guidance, so ``steps``, guidance and negative prompts do not apply.
-Reference-image editing is supported by the pipeline but not exposed here yet.
+Reference-image editing (up to 16 references, referred to as ``<Picture 1>``,
+``<Picture 2>`` ... in the prompt) runs through the same pipeline's
+``image_conditioned`` workflow.
 
 The GGUF does not contain the per-block ``adaln_proj`` weights.  Their output
 only depends on the timestep, and the checkpoint only runs at seven timesteps,
@@ -29,12 +31,16 @@ import torch
 from torch import nn
 
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 DEFAULT_GGUF = os.path.join(PROJECT_ROOT, "models", "minimax_h3_image_Q4_K_S.gguf")
 DEFAULT_BASE_MODEL = os.path.join(PROJECT_ROOT, "models", "minimax-h3-image")
 DEFAULT_ASPECT = 1.0
 DEFAULT_MAX_OUTPUT_SIZE = 2048
 NUM_STEPS = 6
+MAX_REFERENCES = 16  # the checkpoint's documented limit
+MIN_REFERENCE_SIDE = 32  # the pipeline rejects anything smaller
 REQUIRED_SUBFOLDERS = ("vae", "text_encoder", "tokenizer", "processor", "scheduler")
 TABLE_SUFFIX = ".adaln_proj.table"
 TIMESTEP_TOLERANCE = 1e-5
@@ -56,7 +62,9 @@ class TabulatedAdaLN(nn.Module):
 
     def forward(self, temb: torch.Tensor):
         if self.rows is None:
-            raise RuntimeError("TabulatedAdaLN used before the timestep rows were selected")
+            raise RuntimeError(
+                "TabulatedAdaLN used before the timestep rows were selected"
+            )
         rows = self.table.index_select(0, self.rows.to(self.table.device))
         count, width = rows.shape[0], rows.shape[1] // 2
         rows = rows.view(count, 2, width)
@@ -84,7 +92,9 @@ def _select_timestep_rows(modules, grid):
     return hook
 
 
-def _load_gguf_transformer(gguf_path, base_dir=None, compute_dtype=torch.bfloat16, config=None):
+def _load_gguf_transformer(
+    gguf_path, base_dir=None, compute_dtype=torch.bfloat16, config=None
+):
     """Build MiniMaxH3ImageTransformer2DModel on the meta device and fill it from a GGUF.
 
     Repeats the registry-free steps of FromOriginalModelMixin.from_single_file
@@ -105,7 +115,9 @@ def _load_gguf_transformer(gguf_path, base_dir=None, compute_dtype=torch.bfloat1
     }
     grid = checkpoint.pop("adaln_timesteps", None)
     if not tables or grid is None:
-        raise ValueError("GGUF has no adaln_proj tables / adaln_timesteps; was it made by the converter?")
+        raise ValueError(
+            "GGUF has no adaln_proj tables / adaln_timesteps; was it made by the converter?"
+        )
 
     with init_empty_weights():
         model = MiniMaxH3ImageTransformer2DModel.from_config(config or {})
@@ -116,7 +128,9 @@ def _load_gguf_transformer(gguf_path, base_dir=None, compute_dtype=torch.bfloat1
         block.adaln_proj = TabulatedAdaLN(torch.as_tensor(table))
         modules.append(block.adaln_proj)
     if len(modules) != len(model.transformer_blocks):
-        raise ValueError(f"expected {len(model.transformer_blocks)} adaln tables, found {len(modules)}")
+        raise ValueError(
+            f"expected {len(model.transformer_blocks)} adaln tables, found {len(modules)}"
+        )
 
     expected = set(model.state_dict())
     missing = sorted(expected - set(checkpoint))
@@ -126,7 +140,9 @@ def _load_gguf_transformer(gguf_path, base_dir=None, compute_dtype=torch.bfloat1
             f"GGUF does not match the transformer: missing {missing[:5]}, unexpected {unexpected[:5]}"
         )
 
-    quantizer = DiffusersAutoQuantizer.from_config(GGUFQuantizationConfig(compute_dtype=compute_dtype))
+    quantizer = DiffusersAutoQuantizer.from_config(
+        GGUFQuantizationConfig(compute_dtype=compute_dtype)
+    )
     quantizer.validate_environment()
     quantizer.preprocess_model(
         model=model,
@@ -146,7 +162,8 @@ def _load_gguf_transformer(gguf_path, base_dir=None, compute_dtype=torch.bfloat1
     quantizer.postprocess_model(model)
     model.hf_quantizer = quantizer
     model.register_forward_pre_hook(
-        _select_timestep_rows(modules, torch.as_tensor(grid).float().cpu()), with_kwargs=True
+        _select_timestep_rows(modules, torch.as_tensor(grid).float().cpu()),
+        with_kwargs=True,
     )
     return model.eval()
 
@@ -157,7 +174,9 @@ def _is_remote(path: str) -> bool:
 
 def _validate_base_model(base_model: str) -> str:
     if _is_remote(base_model):
-        raise ValueError("minimaxh3image requires a local component folder, not a remote URL")
+        raise ValueError(
+            "minimaxh3image requires a local component folder, not a remote URL"
+        )
     if not os.path.isdir(base_model):
         raise FileNotFoundError(base_model)
     required = [os.path.join(base_model, name) for name in REQUIRED_SUBFOLDERS]
@@ -185,15 +204,21 @@ class minimaxh3image(MediaBackend):
 
         gguf_path = os.fspath(backend_config.get("gguf", DEFAULT_GGUF))
         if _is_remote(gguf_path):
-            raise ValueError("minimaxh3image requires a local GGUF file, not a remote URL")
+            raise ValueError(
+                "minimaxh3image requires a local GGUF file, not a remote URL"
+            )
         if not os.path.isfile(gguf_path):
             raise FileNotFoundError(gguf_path)
         gguf_path = os.path.abspath(gguf_path)
-        base_dir = _validate_base_model(os.fspath(backend_config.get("base_model", DEFAULT_BASE_MODEL)))
+        base_dir = _validate_base_model(
+            os.fspath(backend_config.get("base_model", DEFAULT_BASE_MODEL))
+        )
 
         # Keep the last-used component on the GPU between requests (default),
         # or move everything off the GPU after each one.
-        self.release_gpu_after_request = bool(backend_config.get("release_gpu_after_request", False))
+        self.release_gpu_after_request = bool(
+            backend_config.get("release_gpu_after_request", False)
+        )
         # Offload by dropping the GPU copy instead of copying back (see cpu_mirror.py).
         self.fast_offload = bool(backend_config.get("fast_offload", True))
         self._active_config = None
@@ -211,22 +236,36 @@ class minimaxh3image(MediaBackend):
             MiniMaxH3ImageModularPipeline,
             MiniMaxH3Scheduler,
         )
-        from transformers import Qwen2TokenizerFast, Qwen3VLForConditionalGeneration, Qwen3VLProcessor
+        from transformers import (
+            Qwen2TokenizerFast,
+            Qwen3VLForConditionalGeneration,
+            Qwen3VLProcessor,
+        )
 
-        with open(os.path.join(base_dir, "transformer", "config.json"), encoding="utf-8") as handle:
-            transformer_config = {k: v for k, v in json.load(handle).items() if not k.startswith("_")}
-        with open(os.path.join(base_dir, "pdd_config.json"), encoding="utf-8") as handle:
+        with open(
+            os.path.join(base_dir, "transformer", "config.json"), encoding="utf-8"
+        ) as handle:
+            transformer_config = {
+                k: v for k, v in json.load(handle).items() if not k.startswith("_")
+            }
+        with open(
+            os.path.join(base_dir, "pdd_config.json"), encoding="utf-8"
+        ) as handle:
             pdd = json.load(handle)
         sigmas = pdd["sigmas"]
         if len(sigmas) != NUM_STEPS + 1:
-            raise ValueError(f"pdd_config.json has {len(sigmas) - 1} steps, expected {NUM_STEPS}")
+            raise ValueError(
+                f"pdd_config.json has {len(sigmas) - 1} steps, expected {NUM_STEPS}"
+            )
 
         transformer = _load_gguf_transformer(gguf_path, config=transformer_config)
         transformer.register_forward_pre_hook(self._before_step, with_kwargs=True)
         transformer.register_forward_hook(self._after_step, with_kwargs=True)
 
         text_encoder = Qwen3VLForConditionalGeneration.from_pretrained(
-            os.path.join(base_dir, "text_encoder"), dtype=torch.bfloat16, device_map={"": 0}
+            os.path.join(base_dir, "text_encoder"),
+            dtype=torch.bfloat16,
+            device_map={"": 0},
         ).eval()
         # Only text_encoder.model is called; the vocabulary projection would waste ~1.5 GB.
         text_encoder.lm_head = nn.Identity()
@@ -237,12 +276,18 @@ class minimaxh3image(MediaBackend):
         pipe.update_components(
             transformer=transformer,
             text_encoder=text_encoder,
-            tokenizer=Qwen2TokenizerFast.from_pretrained(os.path.join(base_dir, "tokenizer")),
-            processor=Qwen3VLProcessor.from_pretrained(os.path.join(base_dir, "processor")),
+            tokenizer=Qwen2TokenizerFast.from_pretrained(
+                os.path.join(base_dir, "tokenizer")
+            ),
+            processor=Qwen3VLProcessor.from_pretrained(
+                os.path.join(base_dir, "processor")
+            ),
             vae=AutoencoderKLMiniMaxH3Image.from_pretrained(
                 os.path.join(base_dir, "vae"), torch_dtype=torch.float32
             ).eval(),
-            scheduler=MiniMaxH3Scheduler.from_pretrained(os.path.join(base_dir, "scheduler")),
+            scheduler=MiniMaxH3Scheduler.from_pretrained(
+                os.path.join(base_dir, "scheduler")
+            ),
             sample_sigmas=sigmas,
         )
         if self.fast_offload:
@@ -253,7 +298,9 @@ class minimaxh3image(MediaBackend):
         """Swap the manager's copy-back offload for CpuMirror (all components are parked on the CPU now)."""
         for user_hook in self.components_manager.model_hooks or []:
             mirror = CpuMirror(user_hook.model)
-            user_hook.hook.init_hook = lambda module, mirror=mirror: mirror.offload() or module
+            user_hook.hook.init_hook = (
+                lambda module, mirror=mirror: mirror.offload() or module
+            )
 
     # -- per-step progress and cancellation ---------------------------------
 
@@ -271,9 +318,21 @@ class minimaxh3image(MediaBackend):
             self.raise_if_cancelled(config)
             if kwargs["pdd_step_index"] == 0:
                 self._set_phase(config, "denoising")
+        timing = self._timing
+        if timing is not None:
+            if "rows" not in timing and "position_ids" in kwargs:
+                timing["rows"] = int(kwargs["position_ids"].shape[0])
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()  # attribute queued GPU work to the right phase
+            timing["step_starts"].append(time.perf_counter())
         return None
 
     def _after_step(self, _module, args, kwargs, output):
+        timing = self._timing
+        if timing is not None:
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            timing["step_ends"].append(time.perf_counter())
         config = self._active_config
         progress_state = config.get("progress_state") if config else None
         if progress_state is not None:
@@ -292,10 +351,38 @@ class minimaxh3image(MediaBackend):
         llama-server; with CpuMirror it costs no device-to-host copy.
         """
         manager = self.components_manager
-        for hook in (getattr(manager, "model_hooks", None) or []):
+        for hook in getattr(manager, "model_hooks", None) or []:
             hook.offload()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+
+    def _log_timing(
+        self, started: float, width: int, height: int, references: int
+    ) -> None:
+        timing, self._timing = self._timing, None
+        if timing is None:
+            return
+        finished = time.perf_counter()
+        starts, ends = timing["step_starts"], timing["step_ends"]
+        task = (
+            f"edit ({references} reference{'s' if references != 1 else ''})"
+            if references
+            else "text-to-image"
+        )
+        if len(ends) == NUM_STEPS and len(starts) == NUM_STEPS:
+            steps = [end - start for start, end in zip(starts, ends)]
+            setup, decode = starts[0] - started, finished - ends[-1]
+            detail = (
+                f"setup {setup:.1f}s | steps {' '.join(f'{step:.1f}' for step in steps)} "
+                f"(sum {sum(steps):.1f}s) | decode+save {decode:.1f}s"
+            )
+        else:
+            detail = f"stopped after {len(ends)} of {NUM_STEPS} steps"
+        rows = f", {timing['rows']} rows" if "rows" in timing else ""
+        print(
+            f"[{self.model_id}] {task} {width}x{height}{rows}: {detail} | total {finished - started:.1f}s",
+            flush=True,
+        )
 
     # -- request planning ---------------------------------------------------
 
@@ -313,27 +400,61 @@ class minimaxh3image(MediaBackend):
                 return DEFAULT_ASPECT
         return float(aspect) if isinstance(aspect, (int, float)) else DEFAULT_ASPECT
 
-    def _plan_request(self, config: dict, batch_id, media) -> tuple[str, int, int, int]:
-        """Return (output_file, seed, width, height) for a text-to-image request."""
-        if media:
+    @staticmethod
+    def _load_references(media) -> list:
+        """Open the reference images (upright, RGB), validating count and size before any GPU work."""
+        from PIL import Image, ImageOps
+
+        if len(media) > MAX_REFERENCES:
             raise ValueError(
-                f"{self.model_id} does not support reference images yet; "
-                "image editing is not exposed by this backend"
+                f"at most {MAX_REFERENCES} reference images are supported, got {len(media)}"
             )
+        images = []
+        for path in media:
+            try:
+                with Image.open(path) as opened:
+                    opened.load()
+                    image = ImageOps.exif_transpose(opened).convert("RGB")
+            except OSError as error:
+                raise ValueError(
+                    f"cannot read reference image {os.fspath(path)}: {error}"
+                ) from error
+            if min(image.size) < MIN_REFERENCE_SIDE:
+                raise ValueError(
+                    f"reference image {os.fspath(path)} is {image.width}x{image.height}; "
+                    f"each side needs at least {MIN_REFERENCE_SIDE} pixels"
+                )
+            images.append(image)
+        return images
+
+    def _plan_request(
+        self, config: dict, batch_id, media
+    ) -> tuple[str, int, int, int, list]:
+        """Return (output_file, seed, width, height, references) for a request."""
+        references = self._load_references(media)
 
         if batch_id is not None:
             output_file = f"/tmp/ircawp_generated/{self.model_id}.{batch_id}.png"
         else:
-            output_file = config.get("output_file", f"/tmp/ircawp_generated/{self.model_id}.png")
+            output_file = config.get(
+                "output_file", f"/tmp/ircawp_generated/{self.model_id}.png"
+            )
 
         seed = config.get("seed")
         if seed is None:
             seed = torch.randint(0, 1000000, (1,)).item()
 
+        max_output_size = config.get("max_output_size", DEFAULT_MAX_OUTPUT_SIZE)
         if "width" in config and "height" in config:
             width, height = config["width"], config["height"]
+        elif references:
+            # Follow the first reference's framing (the pipeline's own default would be 2048x2048),
+            # with its long edge at max_output_size; the server passes the input's own edge.
+            first_width, first_height = references[0].size
+            scale = max_output_size / max(first_width, first_height)
+            width = max(16, round(first_width * scale / 16) * 16)
+            height = max(16, round(first_height * scale / 16) * 16)
         else:
-            max_output_size = config.get("max_output_size", DEFAULT_MAX_OUTPUT_SIZE)
             aspect = self._parse_aspect(config)
             if aspect >= 1.0:
                 width, height = max_output_size, max_output_size / aspect
@@ -342,30 +463,44 @@ class minimaxh3image(MediaBackend):
             # The pipeline generates on a 32-pixel grid; matching it avoids a resample.
             width = max(32, round(width / 32) * 32)
             height = max(32, round(height / 32) * 32)
-        return output_file, seed, width, height
+        return output_file, seed, width, height, references
 
     # -- generation ---------------------------------------------------------
 
-    def execute(self, prompt: str, config: dict = {}, batch_id=None, media=[]) -> tuple[str, str]:
-        output_file, seed, width, height = self._plan_request(config, batch_id, media)
+    def execute(
+        self, prompt: str, config: dict = {}, batch_id=None, media=[]
+    ) -> tuple[str, str]:
+        output_file, seed, width, height, references = self._plan_request(
+            config, batch_id, media
+        )
         final_prompt = prompt.strip()
         if not final_prompt:
             raise ValueError("prompt must not be empty")
 
         # The schedule is fixed: `steps`, guidance and negative prompts do not apply.
         self._active_config = config
+        self._timing = (
+            {"step_starts": [], "step_ends": []} if self.log_timings else None
+        )
+        started = time.perf_counter()
         try:
             self.raise_if_cancelled(config)
-            self._set_phase(config, "encoding prompt")
+            self._set_phase(
+                config, "encoding references" if references else "encoding prompt"
+            )
+            call_kwargs = {"image": references} if references else {}
             images = self.pipe(
                 prompt=final_prompt,
                 height=height,
                 width=width,
                 generator=torch.Generator("cpu").manual_seed(seed),
                 output="images",
+                min_generation_area=1024 * 1024,
+                **call_kwargs,
             )
             self.raise_if_cancelled(config)
         finally:
+            self._log_timing(started, width, height, len(references))
             self._set_phase(config, None)
             self._active_config = None
             if self.release_gpu_after_request:
@@ -381,6 +516,8 @@ class minimaxh3image(MediaBackend):
             inference_steps=NUM_STEPS,
             width=output_image.width,
             height=output_image.height,
+            task="image-edit" if references else None,
+            references=len(references) or None,
         )
         self.last_imagegen_prompt = final_prompt
         return output_file, final_prompt
