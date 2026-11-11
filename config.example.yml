@@ -10,6 +10,11 @@ server:
 # Which backend to use for image generation
 backend: "qwenimage21"
 
+# Keep at most one model in memory. Loading a different backend first
+# unloads the current one (rejected with 409 if it is mid-generation).
+# Set to false to cache every backend that has been loaded.
+single_model: true
+
 # LLM settings — the server proxies ALL LLM inference (prompt rewriting,
 # prompt-from-images) to this OpenAI-compatible chat endpoint, so the
 # browser never talks to the LLM directly (no self-signed-cert issues).
@@ -65,6 +70,16 @@ backends:
         base_model: "OpenMOSS-Team/MOSS-Image-SFT"
         adapter: "lodestones/MOSS-Image-SFT-8-steps-dmd"
         text_encoder_4bit: true
+    # MiniMax-H3-Image: text-to-image, fixed six-step distilled grid, no CFG.
+    # Needs the transformer GGUF plus the component folder built by
+    # scripts/prepare_minimaxh3image_components.py (see docs/MINIMAXH3IMAGE.md).
+    # Anything under ~4 MP is generated on a 2048x2048-area canvas, so small
+    # sizes cost the same as 2048px. Relative paths resolve against the server's
+    # working directory.
+    minimaxh3image:
+        max_output_size: 2048
+        gguf: "models/minimax_h3_image_Q4_K_S.gguf"
+        base_model: "models/minimax-h3-image"
     ming_design:
         max_output_size: 1024
         steps: 12

@@ -29,7 +29,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-diffusers = { git = "https://github.com/huggingface/diffusers" }
+diffusers = { git = "https://github.com/huggingface/diffusers", rev = "875373ac7f5856071e345a3e394c74efccc6b9e6" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]

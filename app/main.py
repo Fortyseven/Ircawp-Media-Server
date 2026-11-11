@@ -104,6 +104,10 @@ def load_config(path: str = "config.yml") -> dict:
 CONFIG = load_config()
 SERVER_CONFIG = CONFIG.get("server", {})
 DEFAULT_BACKEND = CONFIG["backend"]
+# When true (default), loading a backend first unloads any other loaded
+# backend, so at most one model is resident at a time. Set
+# `single_model: false` in config.yml to keep every loaded model cached.
+SINGLE_MODEL = bool(CONFIG.get("single_model", True))
 
 
 def _llm_config(config: dict) -> dict:
@@ -137,6 +141,9 @@ def _new_temp_file(suffix=".png") -> Path:
 
 # Cache of backend instances (keeps models in memory across requests)
 _backend_cache = {}
+# Number of in-flight generations per backend id; a backend in use is never
+# evicted out from under its worker thread.
+_backend_in_use: dict[str, int] = {}
 _active_cancellations: dict[str, Event] = {}
 _active_progress: dict[str, dict] = {}
 
@@ -173,10 +180,56 @@ def _unregister_progress(request_id: str | None) -> None:
         _active_progress.pop(request_id, None)
 
 
+def _acquire_backend(backend_id: str) -> None:
+    """Mark a backend as in use by one in-flight generation."""
+    _backend_in_use[backend_id] = _backend_in_use.get(backend_id, 0) + 1
+
+
+def _release_backend(backend_id: str) -> None:
+    """Undo one `_acquire_backend`."""
+    remaining = _backend_in_use.get(backend_id, 0) - 1
+    if remaining > 0:
+        _backend_in_use[backend_id] = remaining
+    else:
+        _backend_in_use.pop(backend_id, None)
+
+
+def _unload_backends(exclude: str | None = None) -> list[str]:
+    """Dispose every cached backend except `exclude`; returns the ids unloaded."""
+    unloaded = []
+    for backend_id in list(_backend_cache):
+        if backend_id == exclude:
+            continue
+        backend = _backend_cache.pop(backend_id)
+        try:
+            backend.dispose()
+        except Exception as e:
+            console.log(f"[yellow]Backend '{backend_id}' dispose warning: {e}")
+        unloaded.append(backend_id)
+    return unloaded
+
+
 def get_backend(backend_id: str):
-    """Lazy-load a backend by ID, caching the instance so the model stays in memory."""
+    """Lazy-load a backend by ID, caching the instance so the model stays in memory.
+
+    In single-model mode, any other loaded backend is unloaded first. If one
+    of those is mid-generation, the load is rejected with 409 rather than
+    pulling the model out from under it.
+    """
     if backend_id in _backend_cache:
         return _backend_cache[backend_id]
+
+    if SINGLE_MODEL and _backend_cache:
+        busy = [b for b in _backend_cache if b != backend_id and _backend_in_use.get(b)]
+        if busy:
+            raise HTTPException(
+                status_code=409,
+                detail=f"backend '{busy[0]}' is busy generating — "
+                f"cannot switch to '{backend_id}' until it finishes",
+            )
+        unloaded = _unload_backends(exclude=backend_id)
+        if unloaded:
+            console.log(f"[yellow]Unloaded {', '.join(unloaded)} before loading '{backend_id}'")
 
     import importlib
 
@@ -268,6 +321,8 @@ BACKEND_CAPABILITIES = {
     "ming_design": {"cfg": "guidance_scale", "cfg_experimental": True, "seed": True},
     "fibo2": {"cfg": "guidance_scale", "seed": True, "negative_prompt": True},
     "fibo2editturbo": {"seed": True, "steps": False},
+    # Fixed six-step distilled grid, no guidance or negative prompt.
+    "minimaxh3image": {"seed": True, "steps": False},
 }
 
 
@@ -497,21 +552,13 @@ async def unload_backends():
     """
     if not _backend_cache:
         return {"unloaded": [], "message": "no backends loaded"}
-    if _active_progress:
+    if _active_progress or _backend_in_use:
         raise HTTPException(
             status_code=409,
             detail="a generation is in flight — cancel it first",
         )
 
-    unloaded = []
-    for backend_id in list(_backend_cache):
-        backend = _backend_cache.pop(backend_id)
-        try:
-            backend.dispose()
-        except Exception as e:
-            console.log(f"[yellow]Backend '{backend_id}' dispose warning: {e}")
-        unloaded.append(backend_id)
-    return {"unloaded": unloaded}
+    return {"unloaded": _unload_backends()}
 
 
 # ── LLM proxy ───────────────────────────────────────────────────
@@ -654,6 +701,7 @@ async def images_generations(req: ImageGenerationRequest) -> ImagesResponse:
 
     cancellation_event = _register_cancellation(req.request_id)
     progress_state = _register_progress(req.request_id, n)
+    _acquire_backend(backend_id)
     try:
         try:
             backend = get_backend(backend_id)
@@ -727,6 +775,7 @@ async def images_generations(req: ImageGenerationRequest) -> ImagesResponse:
             data=results,
         )
     finally:
+        _release_backend(backend_id)
         _unregister_cancellation(req.request_id, cancellation_event)
         _unregister_progress(req.request_id)
 
@@ -756,6 +805,7 @@ async def images_edits(req: ImageEditRequest) -> ImagesResponse:
     # Decode input images to temp files
     temp_dir = Path(tempfile.mkdtemp())
     temp_media_paths = []
+    _acquire_backend(backend_id)
     try:
         try:
             backend = get_backend(backend_id)
@@ -858,6 +908,7 @@ async def images_edits(req: ImageEditRequest) -> ImagesResponse:
     finally:
         # Cleanup input temp files
         shutil.rmtree(temp_dir, ignore_errors=True)
+        _release_backend(backend_id)
         _unregister_cancellation(req.request_id, cancellation_event)
         _unregister_progress(req.request_id)
 
