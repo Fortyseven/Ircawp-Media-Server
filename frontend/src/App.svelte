@@ -32,6 +32,8 @@
     let results = $state(null);
     let history = $state([]);
     let progressPercent = $state(0);
+    // What the backend is doing right now (e.g. "encoding prompt"); empty if it doesn't say.
+    let progressPhase = $state("");
     let progressTimer = null;
     let requestController = null;
     let activeRequestId = null;
@@ -46,6 +48,7 @@
             const perImage = p.total_steps > 0 ? p.step / p.total_steps : 0;
             const percent = ((p.image_index + perImage) / p.n) * 100;
             progressPercent = Math.min(99, Math.round(percent));
+            progressPhase = typeof p.phase === "string" ? p.phase : "";
         } catch {
             // not yet registered server-side, or already finished — ignore
         }
@@ -80,6 +83,7 @@
 
     function startProgressPolling(requestId) {
         progressPercent = 0;
+        progressPhase = "";
         progressTimer = setInterval(() => pollProgress(requestId), 400);
     }
 
@@ -279,7 +283,9 @@
                                 ></div>
                             </div>
                             <p class="mono dim progress-label">
-                                {progressPercent}%
+                                {progressPercent}%{progressPhase
+                                    ? ` · ${progressPhase}`
+                                    : ""}
                             </p>
                         {/if}
                     </div>

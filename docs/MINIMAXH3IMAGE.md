@@ -154,6 +154,9 @@ backends:
         max_output_size: 2048
         gguf: "models/minimax_h3_image_Q4_K_S.gguf"
         base_model: "models/minimax-h3-image"
+        # Park every component on the CPU after each request, freeing the GPU
+        # for other users (default false: the last-used component stays resident).
+        release_gpu_after_request: false
 ```
 
 Select `model: "minimaxh3image"` in an API request. The top-level default
@@ -171,11 +174,47 @@ Behaviour notes:
   back: a 1024x1024 request costs the same as 2048x2048. `size` below that is
   therefore a quality/speed trade only in the final resize.
 - A cancellation request is honoured between transformer steps; progress is
-  `step/6`.
+  `step/6`. `GET /images/progress/{id}` also carries a `phase` (`encoding prompt`,
+  `denoising`, `decoding`) that the UI shows next to the percentage; it is absent
+  for backends that don't set it and cleared when the request ends.
+- `release_gpu_after_request: true` moves every component off the GPU when a
+  request ends (success, error or cancellation), at ~0.3 s cost, so something
+  else (e.g. `llama-server`) can use the card. With it off, ~13-18 GB stays
+  allocated while idle. It does not lower the peak *during* a request.
 - Prompts are used verbatim (no chat template), truncated at 4096 tokens. The
   model wants long, concrete English descriptions. The card's prompt expander
   (MiniMax-H3-Image-PE) is a separate model and is not integrated; prompt
   rewriting stays with the client.
+
+## Offload and latency
+
+The text encoder (17 GB), transformer (11 GB) and VAE cannot share a 24 GB card,
+so Diffusers' `ComponentsManager` swaps them per request. Its stock offload copies
+each evicted component back to the CPU, and a GPU-to-CPU copy of that size costs
+4-5 s (it allocates pageable memory), against 1-2 s for CPU-to-GPU. Measured for a
+1024x1024 request (canvas 2048x2048):
+
+| | copy-back offload | `CpuMirror` |
+| --- | --- | --- |
+| Whole request | 26.9 s | 15.6 s |
+| Step 0 (evict text encoder, load transformer, first step) | 9.4 s | 3.1 s |
+| Steps 1-5 and VAE decode | 1.8 s each | 1.8 s each |
+| After the VAE decode (offload, PNG save) | 4.7-7 s | 0.4 s |
+
+`CpuMirror` (`app/backends/minimaxh3image.py`) exploits that the weights never
+change: the CPU tensors a component had while parked are kept as masters, and
+"offloading" puts them back, which drops the GPU copy with no transfer. It also
+restores bitsandbytes' `quant_state` tensors, which `Module.to()` moves in place.
+It is installed on the manager's hooks once all components are loaded.
+
+- **Verified bit-exact on the real model**: the 1024x1024 image is identical
+  (max pixel difference 0) to the one made with the stock copy-back offload, over
+  repeated request cycles and after a full release. A bitsandbytes upgrade that
+  changes where `QuantState` keeps its tensors would be caught by repeating that
+  same-seed comparison; the unit tests only use a stand-in `QuantState`.
+- No extra CPU memory by construction: the masters are the same tensors that
+  were already held to park each component. (Server RSS was measured at ~18 GB
+  loaded before `CpuMirror` was added and not re-measured since.)
 
 ## Editing: not enabled yet
 
@@ -201,15 +240,16 @@ size); and check edit fidelity.
 .venv/bin/python -m unittest discover -s tests
 ```
 
-`tests/test_minimaxh3image.py` (42 tests) covers: converter name mapping, QKV
+`tests/test_minimaxh3image.py` (51 tests) covers: converter name mapping, QKV
 de-interleave, SwiGLU gate/value swap, PDD heads, dtypes, tiny end-to-end
 safetensors-to-GGUF conversion loaded into the real
 `MiniMaxH3ImageTransformer2DModel` class; the AdaLN table equal to the real
 `MiniMaxH3ImageAdaLayerNormModulation` module; the GGUF loader reproducing a
 dense transformer's outputs (including a quantized-linear path and a two-timestep
 call); backend path validation, request sizing, seed, metadata, cancellation,
-progress, no state leaking between requests, disposal and the advertised
-capabilities. These are mocked or tiny; they do not establish image quality.
+progress and phases, the release option, `CpuMirror` (including restoring
+in-place-mutated quantization state), no state leaking between requests, disposal
+and the advertised capabilities. These are mocked or tiny; they do not establish image quality.
 
 Real artifact checks (2026-11-11):
 
@@ -229,23 +269,33 @@ RTX 4090 24 GB (about 1.5 GB used by the desktop, no other compute process,
 `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1` and every `*_PROXY` pointed at a dead
 port, so any network access would have failed. Times are one whole `execute()`:
 text encoding, offload swaps, six steps and VAE decode. They are warm (files in
-the page cache) and were each measured once or twice, not benchmarked.
+the page cache) and were each measured once or twice, not benchmarked. The
+first table is **with `CpuMirror`** (see above); the figures in parentheses are
+the earlier ones with the stock copy-back offload.
 
 | Request | Canvas | Time | Whole-GPU peak (`nvidia-smi`) |
 | --- | --- | --- | --- |
-| 1024x1024 (run twice, seed 42) | 2048x2048 | 24.1 s / 27.1 s | 18.7 / 20.0 GB |
-| 2048x2048 | 2048x2048 | 23.5 s | 18.7 GB |
-| 4096x4096 (the card's 1:1 recommendation, 16 MP) | 4096x4096 | 71.7 s | 20.9 GB |
-| 5472x3072 (the card's 16:9 recommendation, 16.8 MP) | 5472x3072 | 72.1 s | 20.9 GB |
-| 1536x1024 through `/images/generations` | 2496x1664 | first request after server start, incl. model load: 50.7 s | - |
+| 1024x1024 (seed 1) | 2048x2048 | 15.6 s (26.9 s) | - |
+| 2048x2048 | 2048x2048 | 17.4 s (23.5 s) | 18.8 GB (18.7) |
+| 4096x4096 (the card's 1:1 recommendation, 16 MP) | 4096x4096 | 61.1 s (71.7 s) | 22.1 GB (20.9) |
+| 5472x3072 (the card's 16:9 recommendation, 16.8 MP) | 5472x3072 | 62.5 s (72.1 s) | 19.4 GB (20.9) |
+| 1024x1024 through `/images/generations`, warm | 2048x2048 | 15.8 s | - |
+| 1536x1024 through `/images/generations`, first request after server start, incl. model load (earlier run) | 2496x1664 | 50.7 s | - |
 
-- **Backend load** (from local files, no network): 32 s. Idle GPU afterwards:
-  about 2 GB, because everything is offloaded to the CPU. Server RSS is ~18 GB
-  while loaded and ~7 GB after `/backends/unload`; GPU returns to ~2 GB.
-- **Peak is dominated by the larger of the 17.4 GB text encoder and the 11 GB
-  transformer plus activations**, never both. At 16 MP the card has only ~3 GB
-  to spare, so **a loaded `llama-server` (~22 GB) will make large sizes fail**;
-  unload it first. Sizes above ~17 MP (the card allows up to 20) were not tried.
+The 4096x4096 peak is higher than before because the manager now keeps the
+transformer resident during the VAE decode when it fits; that leaves **about 1.5
+GB of headroom at 16 MP**, so close other GPU users before large sizes.
+
+- **Backend load** (from local files, no network): 18-32 s depending on page-cache
+  warmth. Idle GPU afterwards: 13-18 GB with the default, ~2 GB with
+  `release_gpu_after_request: true`. Server RSS was ~18 GB
+  while loaded and ~7 GB after `/backends/unload`, and the GPU returned to ~2 GB
+  (measured before `CpuMirror`; unload was not re-run since).
+- **The 17.4 GB text encoder and the 11 GB transformer are never resident
+  together**; the peak is one of them plus activations (the transformer plus the
+  VAE at the largest sizes). At 16 MP there is only ~1.5-3 GB of headroom, so
+  **a loaded `llama-server` (~22 GB) will make large sizes fail**; unload it
+  first. Sizes above ~17 MP (the card allows up to 20) were not tried.
 - **Same seed reproduces bit-identically** (two 1024x1024 runs differ by 0).
 - **Images were inspected**: faithful to long prompts at all sizes tried; the 1:1
   crop of the 4096x4096 shows clean burlap weave, crust and wood grain with no
@@ -255,7 +305,7 @@ the page cache) and were each measured once or twice, not benchmarked.
   unchanged. `POST /images/generations` with `model: "minimaxh3image"` works, and
   `steps: 30` is ignored (PNG metadata says 6). `/images/progress` reports `1/6`
   mid-run, `/images/cancellations` aborts it (HTTP 409 "Generation cancelled")
-  and the GPU is released afterwards. `/images/edits` returns the backend's
+  and, with `release_gpu_after_request: true`, the GPU is released afterwards. `/images/edits` returns the backend's
   "does not support reference images yet" message as HTTP 500, which is how the
   server reports any backend `ValueError` (the MOSS backend behaves the same).
 - Not tested: the frontend UI, running next to other loaded backends, long-term

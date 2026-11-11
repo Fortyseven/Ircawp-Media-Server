@@ -150,6 +150,65 @@ def _load_gguf_transformer(gguf_path, base_dir=None, compute_dtype=torch.bfloat1
     return model.eval()
 
 
+class CpuMirror:
+    """Offload that frees the GPU copy instead of copying it back to the CPU.
+
+    The weights never change, so the CPU tensors a module had while parked are
+    kept as masters.  ``module.to("cuda")`` makes GPU copies as usual;
+    ``offload()`` puts the masters back, which drops the GPU copies without a
+    device-to-host transfer (those cost 4-5 s per large component into pageable
+    memory; moving to the GPU takes 1-2 s).
+
+    ``Module.to`` replaces parameter data and, for bitsandbytes 4-bit weights,
+    also moves the ``quant_state`` tensors *in place*, so those are snapshotted
+    and restored too.  The module must be on the CPU when this is created.
+    """
+
+    def __init__(self, module: nn.Module):
+        self.module = module
+        self._params = []
+        self._buffers = []
+        self._states = []
+        seen = set()
+        for owner in module.modules():
+            for key, param in owner._parameters.items():
+                if param is None:
+                    continue
+                self._require_cpu(param, key)
+                self._params.append((owner, key, param, param.data))
+                self._capture_state(getattr(param, "quant_state", None), seen)
+            for key, buffer in owner._buffers.items():
+                if buffer is None:
+                    continue
+                self._require_cpu(buffer, key)
+                self._buffers.append((owner, key, buffer))
+
+    @staticmethod
+    def _require_cpu(tensor, key):
+        if tensor.device.type != "cpu":
+            raise RuntimeError(f"CpuMirror needs the module on the CPU, but {key} is on {tensor.device}")
+
+    def _capture_state(self, obj, seen):
+        # Only bitsandbytes' own state objects; their tensor attributes are what `.to` mutates.
+        if obj is None or id(obj) in seen or not type(obj).__module__.startswith("bitsandbytes"):
+            return
+        seen.add(id(obj))
+        for attr, value in vars(obj).items():
+            if isinstance(value, torch.Tensor):
+                self._states.append((obj, attr, value))
+            else:
+                self._capture_state(value, seen)
+
+    def offload(self) -> None:
+        for owner, key, param, data in self._params:
+            owner._parameters[key] = param
+            param.data = data
+        for owner, key, buffer in self._buffers:
+            owner._buffers[key] = buffer
+        for obj, attr, tensor in self._states:
+            setattr(obj, attr, tensor)
+
+
 def _is_remote(path: str) -> bool:
     return "://" in path or path.lower().startswith(("hf.co/", "huggingface.co/"))
 
@@ -190,6 +249,9 @@ class minimaxh3image(MediaBackend):
         gguf_path = os.path.abspath(gguf_path)
         base_dir = _validate_base_model(os.fspath(backend_config.get("base_model", DEFAULT_BASE_MODEL)))
 
+        # Keep the last-used component on the GPU between requests (default),
+        # or move everything off the GPU after each one.
+        self.release_gpu_after_request = bool(backend_config.get("release_gpu_after_request", False))
         self._active_config = None
         self.components_manager = None
         self.pipe = self._build_pipeline(gguf_path, base_dir)
@@ -239,14 +301,31 @@ class minimaxh3image(MediaBackend):
             scheduler=MiniMaxH3Scheduler.from_pretrained(os.path.join(base_dir, "scheduler")),
             sample_sigmas=sigmas,
         )
+        self._install_cpu_mirrors()
         return pipe
 
+    def _install_cpu_mirrors(self) -> None:
+        """Swap the manager's copy-back offload for CpuMirror (all components are parked on the CPU now)."""
+        for user_hook in self.components_manager.model_hooks or []:
+            mirror = CpuMirror(user_hook.model)
+            user_hook.hook.init_hook = lambda module, mirror=mirror: mirror.offload() or module
+
     # -- per-step progress and cancellation ---------------------------------
+
+    def _set_phase(self, config, phase) -> None:
+        progress_state = config.get("progress_state") if config else None
+        if progress_state is not None:
+            if phase is None:
+                progress_state.pop("phase", None)
+            else:
+                progress_state["phase"] = phase
 
     def _before_step(self, _module, args, kwargs):
         config = self._active_config
         if config is not None:
             self.raise_if_cancelled(config)
+            if kwargs["pdd_step_index"] == 0:
+                self._set_phase(config, "denoising")
         return None
 
     def _after_step(self, _module, args, kwargs, output):
@@ -255,15 +334,17 @@ class minimaxh3image(MediaBackend):
         if progress_state is not None:
             progress_state["step"] = kwargs["pdd_step_index"] + 1
             progress_state["total_steps"] = NUM_STEPS
+            if kwargs["pdd_step_index"] + 1 == NUM_STEPS:
+                self._set_phase(config, "decoding")
         return None
 
     def _release_gpu(self) -> None:
-        """Move every managed component back to the CPU after a request.
+        """Park every managed component on the CPU (opt-in: ``release_gpu_after_request``).
 
         The auto-offload manager only evicts a component when another needs the
-        room, so the last one used (up to ~17 GB) would stay resident while the
-        server idles, starving a co-resident llama-server. Standard Diffusers
-        pipelines release their hooks at the end of a call; this does the same.
+        room, so the last one used (up to ~17 GB) stays resident while the
+        server idles. Releasing frees it for other GPU users, e.g. a
+        llama-server; with CpuMirror it costs no device-to-host copy.
         """
         manager = self.components_manager
         for hook in (getattr(manager, "model_hooks", None) or []):
@@ -330,6 +411,7 @@ class minimaxh3image(MediaBackend):
         self._active_config = config
         try:
             self.raise_if_cancelled(config)
+            self._set_phase(config, "encoding prompt")
             images = self.pipe(
                 prompt=final_prompt,
                 height=height,
@@ -339,8 +421,10 @@ class minimaxh3image(MediaBackend):
             )
             self.raise_if_cancelled(config)
         finally:
+            self._set_phase(config, None)
             self._active_config = None
-            self._release_gpu()
+            if self.release_gpu_after_request:
+                self._release_gpu()
 
         output_image = images[0]
         self._save_image_with_metadata(

@@ -556,12 +556,24 @@ class BackendTests(unittest.TestCase):
         backend.execute("three", self.request(progress_state=second))
         self.assertEqual(second, {"step": STEPS, "total_steps": STEPS})
 
-    def test_components_are_offloaded_after_success_and_after_failure(self):
-        backend = self.backend()
+    def hooks_that_record(self, backend):
         offloaded = []
         backend.components_manager = SimpleNamespace(
             model_hooks=[SimpleNamespace(offload=lambda i=i: offloaded.append(i)) for i in range(3)]
         )
+        return offloaded
+
+    def test_gpu_is_kept_between_requests_by_default(self):
+        backend = self.backend()
+        self.assertFalse(backend.release_gpu_after_request)
+        offloaded = self.hooks_that_record(backend)
+        backend.execute("a fox", self.request())
+        self.assertEqual(offloaded, [])
+
+    def test_release_gpu_after_request_offloads_after_success_and_after_failure(self):
+        backend = self.backend(release_gpu_after_request=True)
+        self.assertTrue(backend.release_gpu_after_request)
+        offloaded = self.hooks_that_record(backend)
         backend.execute("a fox", self.request())
         self.assertEqual(offloaded, [0, 1, 2])
         offloaded.clear()
@@ -569,6 +581,36 @@ class BackendTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             backend.execute("a fox", self.request())
         self.assertEqual(offloaded, [0, 1, 2])
+
+    def test_progress_reports_phases_in_order_and_clears_them_afterwards(self):
+        backend = self.backend()
+        progress = {}
+        seen = []
+
+        def record_phases(**kwargs):
+            seen.append(progress.get("phase"))
+            for step in range(STEPS):
+                backend._before_step(None, (), {"pdd_step_index": step})
+                seen.append((progress.get("phase"), progress.get("step")))
+                backend._after_step(None, (), {"pdd_step_index": step}, None)
+            seen.append((progress.get("phase"), progress.get("step")))
+            return [Image.new("RGB", (kwargs["width"], kwargs["height"]))]
+
+        self.pipeline.side_effect = record_phases
+        backend.execute("a fox", self.request(progress_state=progress))
+        self.assertEqual(seen[0], "encoding prompt")
+        self.assertEqual([phase for phase, _ in seen[1:-1]], ["denoising"] * STEPS)
+        self.assertEqual(seen[-1], ("decoding", STEPS))
+        self.assertNotIn("phase", progress)
+        self.assertEqual(progress, {"step": STEPS, "total_steps": STEPS})
+
+    def test_phase_is_cleared_when_generation_fails_or_is_cancelled(self):
+        backend = self.backend()
+        progress = {}
+        self.pipeline.side_effect = RuntimeError("boom")
+        with self.assertRaises(RuntimeError):
+            backend.execute("a fox", self.request(progress_state=progress))
+        self.assertNotIn("phase", progress)
 
     def test_dispose_releases_pipeline_and_component_manager(self):
         backend = self.backend()
@@ -586,6 +628,103 @@ class BackendTests(unittest.TestCase):
         self.assertFalse(caps["cfg"])
         self.assertFalse(caps["negative_prompt"])
         self.assertEqual(caps["schedulers"], [])
+
+
+class FakeQuantState:
+    """Stands in for bitsandbytes' QuantState: `.to` moves its tensors in place."""
+
+    __module__ = "bitsandbytes.functional"
+
+    def __init__(self, absmax, nested=None):
+        self.absmax = absmax
+        self.blocksize = 64
+        self.state2 = nested
+
+    def to(self, dtype):
+        self.absmax = self.absmax.to(dtype)
+        if self.state2 is not None:
+            self.state2.to(dtype)
+
+
+class CpuMirrorTests(unittest.TestCase):
+    """`.to(float64)` stands in for the move to the GPU: it replaces tensor data like a device move."""
+
+    def module(self):
+        torch.manual_seed(0)
+        module = torch.nn.Sequential(torch.nn.Linear(4, 3), torch.nn.Linear(3, 2))
+        module.register_buffer("scale", torch.arange(3.0))
+        module.register_buffer("transient", torch.ones(2), persistent=False)
+        return module
+
+    def test_offload_restores_the_original_tensors_without_copying_back(self):
+        module = self.module()
+        original = {k: v for k, v in module.state_dict().items()}
+        parameter = module[0].weight
+        master = parameter.data
+        mirror = backend_module.CpuMirror(module)
+        module.to(torch.float64)  # "onload": new tensors replace the masters
+        self.assertEqual(module[0].weight.dtype, torch.float64)
+        self.assertIsNot(module[0].weight.data, master)
+        mirror.offload()
+        self.assertIs(module[0].weight, parameter)
+        # `.data` builds a new wrapper on every access; the same storage means nothing was copied.
+        self.assertEqual(module[0].weight.data.data_ptr(), master.data_ptr())
+        for key, value in module.state_dict().items():
+            self.assertTrue(torch.equal(value, original[key]), key)
+        self.assertEqual(module.transient.dtype, torch.float32)
+        self.assertEqual(module.scale.dtype, torch.float32)
+
+    def test_can_cycle_onload_and_offload_repeatedly(self):
+        module = self.module()
+        expected = module(torch.ones(1, 4))
+        mirror = backend_module.CpuMirror(module)
+        for _ in range(3):
+            module.to(torch.float64)
+            self.assertEqual(module(torch.ones(1, 4, dtype=torch.float64)).dtype, torch.float64)
+            mirror.offload()
+            self.assertTrue(torch.equal(module(torch.ones(1, 4)), expected))
+
+    def test_quantization_state_mutated_in_place_is_restored(self):
+        module = self.module()
+        nested = FakeQuantState(torch.full((2,), 7.0))
+        state = FakeQuantState(torch.arange(4.0), nested)
+        module[0].weight.quant_state = state
+        absmax, inner = state.absmax, nested.absmax
+        mirror = backend_module.CpuMirror(module)
+        state.to(torch.float64)
+        module.to(torch.float64)
+        mirror.offload()
+        self.assertIs(state.absmax, absmax)
+        self.assertIs(nested.absmax, inner)
+        self.assertEqual(state.absmax.dtype, torch.float32)
+
+    def test_unrelated_objects_are_left_alone(self):
+        class Other:
+            marker = torch.zeros(1)
+
+        module = self.module()
+        module[0].weight.quant_state = Other()  # not a bitsandbytes class: ignored, not captured
+        mirror = backend_module.CpuMirror(module)
+        mirror.offload()  # must not raise
+
+    def test_module_must_be_on_the_cpu_when_captured(self):
+        module = torch.nn.Linear(2, 2).to("meta")
+        with self.assertRaisesRegex(RuntimeError, "CPU"):
+            backend_module.CpuMirror(module)
+
+    def test_manager_hooks_are_rewired_to_free_instead_of_copy_back(self):
+        module = self.module()
+        calls = []
+        hook = SimpleNamespace(init_hook=lambda m: calls.append("copy-back"))
+        user_hook = SimpleNamespace(model=module, hook=hook)
+        backend = object.__new__(backend_module.minimaxh3image)
+        backend.components_manager = SimpleNamespace(model_hooks=[user_hook])
+        backend._install_cpu_mirrors()
+        weight = module[0].weight.data
+        module.to(torch.float64)
+        hook.init_hook(module)
+        self.assertEqual(calls, [])
+        self.assertEqual(module[0].weight.data.data_ptr(), weight.data_ptr())
 
 
 class TabulatedAdaLNTests(unittest.TestCase):

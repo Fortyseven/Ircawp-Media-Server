@@ -80,6 +80,10 @@ backends:
         max_output_size: 2048
         gguf: "models/minimax_h3_image_Q4_K_S.gguf"
         base_model: "models/minimax-h3-image"
+        # Park everything on the CPU after each request so other GPU users
+        # (e.g. llama-server) can have the card. Default false: the last-used
+        # component stays resident, which is a little faster between requests.
+        # release_gpu_after_request: true
     ming_design:
         max_output_size: 1024
         steps: 12
