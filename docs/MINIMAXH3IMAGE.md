@@ -138,9 +138,6 @@ backends:
         # Park every component on the CPU after each request, freeing the GPU
         # for other users (default false: the last-used component stays resident).
         release_gpu_after_request: false
-        # Print one line per request splitting the time into setup / each step /
-        # decode (adds a GPU sync per step, so leave off normally).
-        log_timings: false
 ```
 
 Select `model: "minimaxh3image"` in an API request. The top-level default
@@ -259,8 +256,6 @@ the longer text pass and the reference VAE encode. A user-reported edit was
 4-5 s slower than text-to-image, consistent with that. It is inherent to how the
 model conditions on references (the reference rows cannot be cached: attention
 is bidirectional and they change with the generated rows at every layer).
-
-Set `log_timings: true` to see the real split in the server log:
 
 ```
 [minimaxh3image] edit (1 reference) 1024x1024, 6195 rows: setup 4.1s | steps 3.2 2.8 2.8 2.8 2.8 2.8 (sum 17.2s) | decode+save 2.0s | total 23.3s

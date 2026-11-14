@@ -23,6 +23,7 @@
         importHistoryImage,
         isReady,
     } from "./lib/media-bin.svelte.js";
+    import { playCue } from "./lib/sounds.js";
     let backends = $state([]);
     let defaultBackend = $state("");
     let capabilities = $state({});
@@ -147,10 +148,12 @@
             };
             await addGeneration(record);
             results = record;
+            playCue("success");
             await refreshHistory();
         } catch (e) {
             if (e.name !== "AbortError") {
                 error = e.message;
+                playCue("error");
             }
         } finally {
             generating = false;

@@ -92,8 +92,6 @@ backends:
         # (e.g. llama-server) can have the card. Default false: the last-used
         # component stays resident, which is a little faster between requests.
         # release_gpu_after_request: true
-        # Print one per-request timing line (setup / steps / decode) to the log.
-        # log_timings: true
     ming_design:
         max_output_size: 1024
         steps: 12

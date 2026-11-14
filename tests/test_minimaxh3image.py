@@ -757,64 +757,6 @@ class BackendTests(unittest.TestCase):
             result = backend.execute(*args, **kwargs)
         return result, buffer.getvalue()
 
-    def test_timings_are_not_logged_by_default(self):
-        backend = self.backend()
-        self.assertFalse(backend.log_timings)
-        _, output = self.run_and_capture(backend, "a fox", self.request())
-        self.assertEqual(output, "")
-
-    def test_timing_summary_is_one_line_with_setup_steps_decode_and_total(self):
-        backend = self.backend(log_timings=True)
-        _, output = self.run_and_capture(backend, "a fox", self.request())
-        lines = output.strip().splitlines()
-        self.assertEqual(len(lines), 1)
-        line = lines[0]
-        self.assertTrue(line.startswith("[minimaxh3image] text-to-image 96x64: setup "), line)
-        for part in ("| steps ", "(sum ", "| decode+save ", "| total "):
-            self.assertIn(part, line)
-        self.assertEqual(line.split("| steps ")[1].split(" (sum")[0].count(" ") + 1, STEPS)
-        self.assertIsNone(backend._timing)
-
-    def test_timing_summary_labels_edits_and_reports_the_sequence_rows(self):
-        backend = self.backend(log_timings=True)
-
-        def with_rows(**kwargs):
-            for step in range(STEPS):
-                backend._before_step(
-                    None, (), {"pdd_step_index": step, "position_ids": torch.zeros(6195, 3)}
-                )
-                backend._after_step(None, (), {"pdd_step_index": step}, None)
-            return [Image.new("RGB", (kwargs["width"], kwargs["height"]))]
-
-        self.pipeline.side_effect = with_rows
-        _, one = self.run_and_capture(backend, "edit", self.request(), media=[self.reference()])
-        self.assertIn("edit (1 reference) 96x64, 6195 rows:", one)
-        _, two = self.run_and_capture(
-            backend, "edit", self.request(), media=[self.reference("a.png"), self.reference("b.png")]
-        )
-        self.assertIn("edit (2 references)", two)
-
-    def test_timing_is_reported_even_when_cancelled_and_state_is_reset(self):
-        backend = self.backend(log_timings=True)
-        cancellation = Event()
-
-        def cancel_after_two(**kwargs):
-            for step in range(STEPS):
-                backend._before_step(None, (), {"pdd_step_index": step})
-                backend._after_step(None, (), {"pdd_step_index": step}, None)
-                if step == 1:
-                    cancellation.set()
-            self.fail("not cancelled")
-
-        self.pipeline.side_effect = cancel_after_two
-        import contextlib
-        import io
-
-        buffer = io.StringIO()
-        with contextlib.redirect_stdout(buffer), self.assertRaises(GenerationCancelled):
-            backend.execute("a fox", self.request(cancellation_event=cancellation))
-        self.assertIn("stopped after 2 of 6 steps", buffer.getvalue())
-        self.assertIsNone(backend._timing)
 
     def test_dispose_releases_pipeline_and_component_manager(self):
         backend = self.backend()

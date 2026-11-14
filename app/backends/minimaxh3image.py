@@ -318,21 +318,9 @@ class minimaxh3image(MediaBackend):
             self.raise_if_cancelled(config)
             if kwargs["pdd_step_index"] == 0:
                 self._set_phase(config, "denoising")
-        timing = self._timing
-        if timing is not None:
-            if "rows" not in timing and "position_ids" in kwargs:
-                timing["rows"] = int(kwargs["position_ids"].shape[0])
-            if torch.cuda.is_available():
-                torch.cuda.synchronize()  # attribute queued GPU work to the right phase
-            timing["step_starts"].append(time.perf_counter())
         return None
 
     def _after_step(self, _module, args, kwargs, output):
-        timing = self._timing
-        if timing is not None:
-            if torch.cuda.is_available():
-                torch.cuda.synchronize()
-            timing["step_ends"].append(time.perf_counter())
         config = self._active_config
         progress_state = config.get("progress_state") if config else None
         if progress_state is not None:
@@ -355,34 +343,6 @@ class minimaxh3image(MediaBackend):
             hook.offload()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-
-    def _log_timing(
-        self, started: float, width: int, height: int, references: int
-    ) -> None:
-        timing, self._timing = self._timing, None
-        if timing is None:
-            return
-        finished = time.perf_counter()
-        starts, ends = timing["step_starts"], timing["step_ends"]
-        task = (
-            f"edit ({references} reference{'s' if references != 1 else ''})"
-            if references
-            else "text-to-image"
-        )
-        if len(ends) == NUM_STEPS and len(starts) == NUM_STEPS:
-            steps = [end - start for start, end in zip(starts, ends)]
-            setup, decode = starts[0] - started, finished - ends[-1]
-            detail = (
-                f"setup {setup:.1f}s | steps {' '.join(f'{step:.1f}' for step in steps)} "
-                f"(sum {sum(steps):.1f}s) | decode+save {decode:.1f}s"
-            )
-        else:
-            detail = f"stopped after {len(ends)} of {NUM_STEPS} steps"
-        rows = f", {timing['rows']} rows" if "rows" in timing else ""
-        print(
-            f"[{self.model_id}] {task} {width}x{height}{rows}: {detail} | total {finished - started:.1f}s",
-            flush=True,
-        )
 
     # -- request planning ---------------------------------------------------
 
@@ -479,10 +439,6 @@ class minimaxh3image(MediaBackend):
 
         # The schedule is fixed: `steps`, guidance and negative prompts do not apply.
         self._active_config = config
-        self._timing = (
-            {"step_starts": [], "step_ends": []} if self.log_timings else None
-        )
-        started = time.perf_counter()
         try:
             self.raise_if_cancelled(config)
             self._set_phase(
@@ -500,7 +456,6 @@ class minimaxh3image(MediaBackend):
             )
             self.raise_if_cancelled(config)
         finally:
-            self._log_timing(started, width, height, len(references))
             self._set_phase(config, None)
             self._active_config = None
             if self.release_gpu_after_request:
