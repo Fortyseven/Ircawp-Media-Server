@@ -26,10 +26,10 @@ fails on F16 overflow) and vectors as F32. It uses the `qwen2` metadata
 workaround for llama-quantize only; MOSS dimensions (3072 / 42 layers) are baked
 into its metadata. Do not reuse it for other architectures.
 
-| File | Size | Tensor types |
-| --- | --- | --- |
-| F16 | 10,165,416,352 B | 269 F16, 194 F32 |
-| Q4_K_S | 2,875,929,088 B | 263 Q4_K, 5 Q5_K, 1 Q5_0 fallback (`video_embedder`, 128 columns), 194 F32 |
+| File   | Size             | Tensor types                                                               |
+| ------ | ---------------- | -------------------------------------------------------------------------- |
+| F16    | 10,165,416,352 B | 269 F16, 194 F32                                                           |
+| Q4_K_S | 2,875,929,088 B  | 263 Q4_K, 5 Q5_K, 1 Q5_0 fallback (`video_embedder`, 128 columns), 194 F32 |
 
 Both files match all 463 official tensor names and shapes.
 
@@ -81,14 +81,14 @@ loader); they do not prove image quality.
 
 RTX 4090, Q4_K_S transformer, 4-bit NF4 text encoder, model CPU offload:
 
-| Check | Result |
-| --- | --- |
-| Automated tests | 59 passed |
-| Backend load (cached files) | about 25 seconds |
-| 1024 x 1024, 50 steps, CFG 3 | 63 s total (58 s sampling), 6.3 GB peak allocated |
-| `/images/generations` 768 x 512, 30 steps, CFG 3.5 | 33 s; correct size and metadata |
-| `/images/edits` | HTTP 500 with the text-to-image-only error |
-| Image inspection | Coherent scene; handwritten "Buy milk and eggs!" and "DAILY FOX" rendered correctly |
+| Check                                              | Result                                                                              |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Automated tests                                    | 59 passed                                                                           |
+| Backend load (cached files)                        | about 25 seconds                                                                    |
+| 1024 x 1024, 50 steps, CFG 3                       | 63 s total (58 s sampling), 6.3 GB peak allocated                                   |
+| `/images/generations` 768 x 512, 30 steps, CFG 3.5 | 33 s; correct size and metadata                                                     |
+| `/images/edits`                                    | HTTP 500 with the text-to-image-only error                                          |
+| Image inspection                                   | Coherent scene; handwritten "Buy milk and eggs!" and "DAILY FOX" rendered correctly |
 
 Not verified: offline operation, Q4_K_S versus F16 or BF16 quality comparison,
 `flash-linear-attention` speedup, layout (JSON) prompts, concurrent use with other
@@ -127,7 +127,7 @@ backends:
         steps: 8
         gguf: "models/moss_image_sft_Q4_K_S.gguf"
         base_model: "OpenMOSS-Team/MOSS-Image-SFT"
-        adapter: "lodestones/MOSS-Image-SFT-8-steps-dmd"   # repo id or local dir
+        adapter: "lodestones/MOSS-Image-SFT-8-steps-dmd" # repo id or local dir
         text_encoder_4bit: true
 ```
 
@@ -136,11 +136,11 @@ backends:
 RTX 4090, 1024 x 1024, Q4_K_S base plus adapters, 6.3 GB peak allocated, load
 about 12 s (cached):
 
-| Steps | Time | Notes |
-| --- | --- | --- |
-| 8 | 10.4 to 12.7 s | Coherent; "DAILY FOX" legible, sticky-note text garbled |
-| 4 | 6.9 to 9.7 s | Coherent; sticky note partly legible |
-| 2 | 5.4 to 5.8 s | Fox watercolor still sharp and coherent |
+| Steps | Time           | Notes                                                   |
+| ----- | -------------- | ------------------------------------------------------- |
+| 8     | 10.4 to 12.7 s | Coherent; "DAILY FOX" legible, sticky-note text garbled |
+| 4     | 6.9 to 9.7 s   | Coherent; sticky note partly legible                    |
+| 2     | 5.4 to 5.8 s   | Fox watercolor still sharp and coherent                 |
 
 Plain-English prompts work despite the JSON training captions. Compared with
 50-step `mossimage`, small handwritten text is less reliable. Not verified:
@@ -148,12 +148,11 @@ quality against the unquantized fp32 model or bf16 base plus LoRA, whether the
 fp32 modulation weights from the original checkpoint would improve results,
 JSON-caption prompts, offline use, and the HTTP API for this backend.
 
-
 ## Offload speed
 
 CPU offload frees the GPU copy of each parked component instead of copying it
 back (`fast_offload`, default true; `fast_offload: false` restores the stock
-behaviour). Output is bit-identical. See [ADDING-MODELS.md](ADDING-MODELS.md#offload-speed-cpu_mirrorpy)
+behavior). Output is bit-identical. See [ADDING-MODELS.md](ADDING-MODELS.md#offload-speed-cpu_mirrorpy)
 and `app/backends/cpu_mirror.py`.
 
 Measured (1024x1024, warm): `mossimage` 62.0 s -> 58.4 s (50 steps, so the

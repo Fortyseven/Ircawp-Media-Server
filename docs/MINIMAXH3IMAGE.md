@@ -147,7 +147,7 @@ Relative paths resolve against the server's working directory; the built-in
 defaults are absolute and project-relative. `GET /backends` advertises `seed`
 only (no steps, CFG, negative prompt or scheduler controls).
 
-Behaviour notes:
+Behavior notes:
 
 - `max_output_size` caps the long side when no explicit `size` is given and
   defaults to 2048; sizes derived from it snap to multiples of 32.

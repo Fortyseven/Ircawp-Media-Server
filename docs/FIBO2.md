@@ -28,10 +28,10 @@ directory for offline use).
 
 ## Sampling
 
-| Backend | Steps | CFG | Notes |
-| --- | --- | --- | --- |
-| `fibo2` | 30 (pipeline default; model card suggests 50) | 5.0 | t2i uses the card's negative caption |
-| `fibo2editturbo` | 4 (overrides normalized) | 1.0 (overrides normalized) | text-to-image requests raise `ValueError` |
+| Backend          | Steps                                         | CFG                        | Notes                                     |
+| ---------------- | --------------------------------------------- | -------------------------- | ----------------------------------------- |
+| `fibo2`          | 30 (pipeline default; model card suggests 50) | 5.0                        | t2i uses the card's negative caption      |
+| `fibo2editturbo` | 4 (overrides normalized)                      | 1.0 (overrides normalized) | text-to-image requests raise `ValueError` |
 
 Edits accept 1-5 images (`<image_1>`, `<image_2>` in the instruction). Masked
 edits are supported by the pipeline but not exposed (no mask API field).
@@ -53,10 +53,10 @@ Numbers below are uncompiled unless stated.
 
 - Load 6 s (warm cache), Dev, transformer NF4, text encoder bf16, offload on.
 - 1024x1024, 30 steps, CFG 5: 55 s, peak 8.4 GiB allocated.
-- 1024x1024 edit, 30 steps, CFG 5: 112 s, peak 10.0 GiB. Colour edit
+- 1024x1024 edit, 30 steps, CFG 5: 112 s, peak 10.0 GiB. Color edit
   ("make the fox black") kept the scene intact.
 - Edit Turbo (own gated repo): 1024x1024 edit, 4 steps: 16 s, peak 10.0 GiB;
-  same colour edit as above, clean result. Text-to-image is rejected.
+  same color edit as above, clean result. Text-to-image is rejected.
 - Peak figures cover allocated torch memory only, not CPU-offload staging.
 
 ## Prompts (TODO)
@@ -71,12 +71,11 @@ Text-rendering captions (`text_render`) can use the `fonts` pipeline argument
 (Aileron/DejaVu from the repo's `fonts/` folder); the backend does not pass
 fonts yet.
 
-
 ## Offload speed
 
 CPU offload frees the GPU copy of each parked component instead of copying it
 back (`fast_offload`, default true; `fast_offload: false` restores the stock
-behaviour). Output is bit-identical. See [ADDING-MODELS.md](ADDING-MODELS.md#offload-speed-cpu_mirrorpy)
+behavior). Output is bit-identical. See [ADDING-MODELS.md](ADDING-MODELS.md#offload-speed-cpu_mirrorpy)
 and `app/backends/cpu_mirror.py`.
 
 Measured (1024x1024, warm): `fibo2` 37.7 s -> 35.7 s, `fibo2editturbo` 8.8 s ->

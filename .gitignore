@@ -13,3 +13,4 @@ __pycache__
 vendor
 .pytest_cache
 .ruff_cache
+tmp

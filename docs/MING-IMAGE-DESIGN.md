@@ -28,7 +28,7 @@ backends:
         steps: 12
         encoder_gguf: "models/ming-image/Text Encoders (UPDATED)/Ming-Image-0.1-Ling-Mini-2.0-Q4_K_M.gguf"
         dit_gguf: "models/ming-image/Ming-Image-0.1-Design-Q4_K_M.gguf"
-        base_dir: "models/ming-image/official"   # configs + vae/diffusion_pytorch_model.safetensors
+        base_dir: "models/ming-image/official" # configs + vae/diffusion_pytorch_model.safetensors
         # code_dir: "vendor/ming-image"          # default; created by `just ming-setup`
 ```
 
@@ -79,13 +79,13 @@ leaves such a copy alone. `Justfile` itself is git-ignored in this repo.
 
 The "6B" figure is the DiT only. The official checkpoint is 52.9 GB bf16.
 
-| Stage | Component | Official size |
-| --- | --- | --- |
-| 0 | Qwen2.5-VL vision tower + 20-layer `BailingMoeV2` LLM (256 experts, top-8, hidden 2048, MultiRouter, 3D RoPE), `mllm/` | 34 GB |
-| 0 | 256 learned query tokens, projections (`mlp/`); hidden states from LLM layers 5/12/20 | 0.1 GB |
-| 1 | Qwen2-style connector (28 layers, bidirectional), `connector/` | 6.2 GB |
-| 1 | 30-layer Z-Image-style `DiffusionTransformer` (dim 3840), `transformer/` | 12.3 GB |
-| 1 | 4-channel `AutoencoderKLQwenImage` VAE (RGBA), `vae/` | 0.25 GB |
+| Stage | Component                                                                                                              | Official size |
+| ----- | ---------------------------------------------------------------------------------------------------------------------- | ------------- |
+| 0     | Qwen2.5-VL vision tower + 20-layer `BailingMoeV2` LLM (256 experts, top-8, hidden 2048, MultiRouter, 3D RoPE), `mllm/` | 34 GB         |
+| 0     | 256 learned query tokens, projections (`mlp/`); hidden states from LLM layers 5/12/20                                  | 0.1 GB        |
+| 1     | Qwen2-style connector (28 layers, bidirectional), `connector/`                                                         | 6.2 GB        |
+| 1     | 30-layer Z-Image-style `DiffusionTransformer` (dim 3840), `transformer/`                                               | 12.3 GB       |
+| 1     | 4-channel `AutoencoderKLQwenImage` VAE (RGBA), `vae/`                                                                  | 0.25 GB       |
 
 Text-to-image flow: tokenize (`<role>` chat template) with 256 query-token
 placeholders appended, prefill the LLM once (no KV cache, no `lm_head`), take the
@@ -108,12 +108,12 @@ Community GGUFs from
 (MIT, unofficial, made for ComfyUI-GGUF) plus small official files, all under
 `models/ming-image/` (git-ignored):
 
-| Path | Size | Contents |
-| --- | --- | --- |
-| `Ming-Image-0.1-Design-Q4_K_M.gguf` | 5.87 GB | DiT: 309 BF16 / 120 Q8_0 / 30 Q6_K / 60 Q4_K |
-| `Text Encoders (UPDATED)/Ming-Image-0.1-Ling-Mini-2.0-Q4_K_M.gguf` | 11.5 GB | ViT, LLM, connector, query tokens, projections |
-| `official/` | 0.3 GB | Official configs, tokenizer, scheduler config, and `vae/diffusion_pytorch_model.safetensors` (diffusers layout) |
-| `ming_image_vae_bf16.safetensors` | 0.25 GB | Community VAE in ComfyUI key layout. **Not used**; it does not load into the diffusers class |
+| Path                                                               | Size    | Contents                                                                                                        |
+| ------------------------------------------------------------------ | ------- | --------------------------------------------------------------------------------------------------------------- |
+| `Ming-Image-0.1-Design-Q4_K_M.gguf`                                | 5.87 GB | DiT: 309 BF16 / 120 Q8_0 / 30 Q6_K / 60 Q4_K                                                                    |
+| `Text Encoders (UPDATED)/Ming-Image-0.1-Ling-Mini-2.0-Q4_K_M.gguf` | 11.5 GB | ViT, LLM, connector, query tokens, projections                                                                  |
+| `official/`                                                        | 0.3 GB  | Official configs, tokenizer, scheduler config, and `vae/diffusion_pytorch_model.safetensors` (diffusers layout) |
+| `ming_image_vae_bf16.safetensors`                                  | 0.25 GB | Community VAE in ComfyUI key layout. **Not used**; it does not load into the diffusers class                    |
 
 Other DiT quants: Q2_K 4.71, Q3_K_M 5.13, Q5_K_M 6.16, Q6_K 6.76, Q8_0 7.33 GB.
 The encoder also has Q2_K (7.95 GB). No BF16 master is published, so the guide's
@@ -181,13 +181,13 @@ lazy imports on these paths. Shims:
 
 ## Spike Results (2026-10-17, RTX 4090, 22.4 GiB free, nothing else on the GPU)
 
-| Stage | Time | VRAM |
-| --- | --- | --- |
-| Encoder load (page-cached) | 6.9 s | 9.7 GiB allocated |
-| Encode, 33 to 124 text tokens (plus 256 query tokens) | 2.8 s | 9.8 GiB peak |
-| DiT + VAE load | 3.4 to 5.6 s | 5.8 GiB allocated after the encoder is freed |
-| 1024x1024, 12 steps | 9.0 s (1.39 it/s) | 9.9 GiB peak |
-| 2048x2048, 12 steps | 49.3 s | 20.7 GiB peak; needs `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`, OOM without it |
+| Stage                                                 | Time              | VRAM                                                                                    |
+| ----------------------------------------------------- | ----------------- | --------------------------------------------------------------------------------------- |
+| Encoder load (page-cached)                            | 6.9 s             | 9.7 GiB allocated                                                                       |
+| Encode, 33 to 124 text tokens (plus 256 query tokens) | 2.8 s             | 9.8 GiB peak                                                                            |
+| DiT + VAE load                                        | 3.4 to 5.6 s      | 5.8 GiB allocated after the encoder is freed                                            |
+| 1024x1024, 12 steps                                   | 9.0 s (1.39 it/s) | 9.9 GiB peak                                                                            |
+| 2048x2048, 12 steps                                   | 49.3 s            | 20.7 GiB peak; needs `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`, OOM without it |
 
 Output checks (seed 42, Q4_K_M, CFG 1.0):
 
@@ -209,17 +209,17 @@ concurrent use with other loaded backends, `llama-server` coexisting.
 GPU-free tests: 158 pass across the suite (`tests/test_ming_design.py` has 51,
 `tests/test_ming_loader.py` 34). Real checks:
 
-| Check | Result |
-| --- | --- |
-| Backend construction (encoder to CPU RAM, DiT/VAE to GPU) | 25.4 s, 5.8 GiB VRAM |
-| 1024x1024, 12 steps, seed 42 | 17.2 s total (about 8.5 s sampling, the rest is moving the encoder to the GPU, encoding and moving it back); 15.6 GiB peak, 5.8 GiB after |
-| Same seed vs the spike image | pixel-identical (max difference 0) |
-| Default size (1024x688, resized from the bucket) | 16.8 s, RGBA, progress reached 12/12 |
-| Cancel after step 3 of 12 | `GenerationCancelled` after 10.5 s; the encoder was back on the CPU |
-| `dispose()` | GPU allocation fell to 0.01 GiB |
+| Check                                                                            | Result                                                                                                                                                  |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Backend construction (encoder to CPU RAM, DiT/VAE to GPU)                        | 25.4 s, 5.8 GiB VRAM                                                                                                                                    |
+| 1024x1024, 12 steps, seed 42                                                     | 17.2 s total (about 8.5 s sampling, the rest is moving the encoder to the GPU, encoding and moving it back); 15.6 GiB peak, 5.8 GiB after               |
+| Same seed vs the spike image                                                     | pixel-identical (max difference 0)                                                                                                                      |
+| Default size (1024x688, resized from the bucket)                                 | 16.8 s, RGBA, progress reached 12/12                                                                                                                    |
+| Cancel after step 3 of 12                                                        | `GenerationCancelled` after 10.5 s; the encoder was back on the CPU                                                                                     |
+| `dispose()`                                                                      | GPU allocation fell to 0.01 GiB                                                                                                                         |
 | HTTP `POST /images/generations`, `model: ming_design`, `size: 1280x720`, seed 11 | 200 in 30.8 s including the first load; RGBA PNG with metadata; headline "JAZZ NIGHT", "Live at The Blue Door" and "Friday 8 PM" all rendered correctly |
-| HTTP `POST /images/edits` with two images | 500 "ming_design edits take exactly one reference image, got 2" |
-| `GET /backends` | lists `ming_design` with `cfg`, `cfg_experimental` and `seed` |
+| HTTP `POST /images/edits` with two images                                        | 500 "ming_design edits take exactly one reference image, got 2"                                                                                         |
+| `GET /backends`                                                                  | lists `ming_design` with `cfg`, `cfg_experimental` and `seed`                                                                                           |
 
 ## Image Editing
 
@@ -279,7 +279,6 @@ still at the 1024 bucket, so they are upscaled), multiple references (rejected).
 - 2048 px peaks at 20.7 GiB; it will not fit beside another loaded backend.
 - Upstream code runs on transformers 5 only through the shims above; a
   Transformers upgrade can break them.
-
 
 ## Offload speed
 
